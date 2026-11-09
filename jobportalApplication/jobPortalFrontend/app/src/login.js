@@ -90,10 +90,18 @@ const Login = () => {
         setForgotLoading(true);
         try {
             const res = await dispatch(forgotPassword({ email: trimmedEmail })).unwrap();
+            
+            if (res?.previewOtp) {
+                setOtpCode(String(res.previewOtp));
+            }
+
             Toast.show({
                 type: "success",
-                text1: "Code Sent via Gmail 📧",
-                text2: res.message || "Please check your inbox or spam folder.",
+                text1: res?.delivered ? "Code Sent via Gmail 📧" : "Verification Code 🔑",
+                text2: res?.previewOtp
+                    ? `OTP: ${res.previewOtp} (Auto-filled for testing)`
+                    : (res?.message || "Please check your Gmail inbox or spam folder."),
+                visibilityTime: res?.previewOtp ? 7000 : 4000,
             });
             setForgotStep(2);
             setResendCooldown(60);

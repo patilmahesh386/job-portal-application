@@ -54,7 +54,8 @@ const getSavedJobsByUserId = async (userId) => {
 };
 
 const findByEmail = (email) => {
-  return User.findOne({ email: String(email).toLowerCase().trim() });
+  const cleanEmail = String(email || "").trim();
+  return User.findOne({ email: { $regex: new RegExp(`^${cleanEmail}$`, "i") } });
 };
 
 const setResetPasswordOtp = (userId, otp, expires) => {

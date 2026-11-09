@@ -98,7 +98,7 @@ const forgotPasswordService = async (email) => {
   const user = await repository.findByEmail(normalizedEmail);
 
   if (!user) {
-    throw new Error("No account registered with this email address.");
+    throw new Error("No account registered with this email address. Please verify your email.");
   }
 
   // Generate 6-digit cryptographic-safe OTP
@@ -116,11 +116,12 @@ const forgotPasswordService = async (email) => {
 
   return {
     success: true,
-    message: emailResult.delivered
+    delivered: emailResult.delivered,
+    message: emailResult.message || (emailResult.delivered
       ? "Verification code has been sent to your Gmail address."
-      : "Verification code generated and sent.",
+      : "Verification code generated and sent."),
     email: user.email,
-    previewOtp: emailResult.previewOtp, // Available for development/testing
+    previewOtp: emailResult.previewOtp, // Available for development/testing or autofill
   };
 };
 

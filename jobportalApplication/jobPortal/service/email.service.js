@@ -7,15 +7,19 @@ const createTransporter = () => {
   const user = process.env.GMAIL_USER || process.env.EMAIL_USER;
   const pass = process.env.GMAIL_PASS || process.env.GMAIL_APP_PASSWORD || process.env.EMAIL_PASS;
 
-  if (!user || !pass) {
+  if (!user || !pass || !user.trim() || !pass.trim()) {
     return null;
   }
 
   return nodemailer.createTransport({
     service: "gmail",
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
     auth: {
       user: user.trim(),
-      pass: pass.trim(),
+      // Remove any spaces if user pasted 16-char App Password formatted as "xxxx xxxx xxxx xxxx"
+      pass: pass.trim().replace(/\s+/g, ""),
     },
   });
 };
@@ -121,18 +125,29 @@ const sendResetPasswordOtpEmail = async (toEmail, otp, userName = "Valued User")
 
   if (!transporter) {
     console.warn(
-      "[Job Portal Email Service] Gmail credentials (GMAIL_USER and GMAIL_APP_PASSWORD) not found in .env. OTP logged above for instant testing."
+      "[Job Portal Email Service] Gmail credentials (GMAIL_USER and GMAIL_APP_PASSWORD) not found in .env. Returning OTP for testing."
     );
-    return { delivered: false, previewOtp: otp };
+    return {
+      delivered: false,
+      reason: "GMAIL_CREDENTIALS_MISSING",
+      previewOtp: otp,
+      message: "Gmail credentials not configured in backend .env. Preview code generated.",
+    };
   }
 
   try {
     const info = await transporter.sendMail(mailOptions);
     console.log(`[Job Portal Email Service] OTP email delivered to ${toEmail}: ${info.messageId}`);
-    return { delivered: true };
+    return { delivered: true, message: "Verification code sent to your Gmail inbox." };
   } catch (error) {
     console.error("[Job Portal Email Service] Failed to send email via Gmail SMTP:", error.message);
-    return { delivered: false, previewOtp: otp };
+    return {
+      delivered: false,
+      reason: "SMTP_ERROR",
+      error: error.message,
+      previewOtp: otp,
+      message: `Gmail delivery error: ${error.message}. Code generated for testing.`,
+    };
   }
 };
 
