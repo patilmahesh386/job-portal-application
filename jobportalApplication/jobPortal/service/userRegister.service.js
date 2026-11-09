@@ -121,7 +121,6 @@ const forgotPasswordService = async (email) => {
       ? "Verification code has been sent to your Gmail address."
       : "Verification code generated and sent."),
     email: user.email,
-    previewOtp: emailResult.previewOtp, // Available for development/testing or autofill
   };
 };
 

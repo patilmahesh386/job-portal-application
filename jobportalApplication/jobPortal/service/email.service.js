@@ -4,6 +4,11 @@ const nodemailer = require("nodemailer");
  * Configure Nodemailer transport with Gmail or custom SMTP
  */
 const createTransporter = () => {
+  // Reload dotenv to pick up any new credentials saved to .env dynamically
+  try {
+    require("dotenv").config();
+  } catch (e) {}
+
   const user = process.env.GMAIL_USER || process.env.EMAIL_USER;
   const pass = process.env.GMAIL_PASS || process.env.GMAIL_APP_PASSWORD || process.env.EMAIL_PASS;
 
@@ -125,13 +130,12 @@ const sendResetPasswordOtpEmail = async (toEmail, otp, userName = "Valued User")
 
   if (!transporter) {
     console.warn(
-      "[Job Portal Email Service] Gmail credentials (GMAIL_USER and GMAIL_APP_PASSWORD) not found in .env. Returning OTP for testing."
+      "[Job Portal Email Service] Gmail credentials (GMAIL_USER and GMAIL_APP_PASSWORD) not found in .env."
     );
     return {
       delivered: false,
       reason: "GMAIL_CREDENTIALS_MISSING",
-      previewOtp: otp,
-      message: "Gmail credentials not configured in backend .env. Preview code generated.",
+      message: "Gmail credentials not configured in backend .env. Please configure GMAIL_USER and GMAIL_APP_PASSWORD.",
     };
   }
 
@@ -141,12 +145,19 @@ const sendResetPasswordOtpEmail = async (toEmail, otp, userName = "Valued User")
     return { delivered: true, message: "Verification code sent to your Gmail inbox." };
   } catch (error) {
     console.error("[Job Portal Email Service] Failed to send email via Gmail SMTP:", error.message);
+    const isAppPasswordNeeded = 
+      error.message.includes("Application-specific password required") || 
+      error.message.includes("534-5.7.9") || 
+      error.message.includes("535-5.7.8");
+    const friendlyMessage = isAppPasswordNeeded
+      ? "Google requires a 16-character Google App Password (not your regular login password). Please generate one at https://myaccount.google.com/apppasswords."
+      : `Gmail SMTP Error: ${error.message}`;
+
     return {
       delivered: false,
       reason: "SMTP_ERROR",
       error: error.message,
-      previewOtp: otp,
-      message: `Gmail delivery error: ${error.message}. Code generated for testing.`,
+      message: friendlyMessage,
     };
   }
 };

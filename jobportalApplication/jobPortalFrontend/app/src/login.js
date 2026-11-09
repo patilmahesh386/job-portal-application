@@ -91,20 +91,28 @@ const Login = () => {
         try {
             const res = await dispatch(forgotPassword({ email: trimmedEmail })).unwrap();
             
-            if (res?.previewOtp) {
-                setOtpCode(String(res.previewOtp));
-            }
+            // Input box stays empty - user enters the OTP from their Gmail
+            setOtpCode("");
 
-            Toast.show({
-                type: "success",
-                text1: res?.delivered ? "Code Sent via Gmail 📧" : "Verification Code 🔑",
-                text2: res?.previewOtp
-                    ? `OTP: ${res.previewOtp} (Auto-filled for testing)`
-                    : (res?.message || "Please check your Gmail inbox or spam folder."),
-                visibilityTime: res?.previewOtp ? 7000 : 4000,
-            });
-            setForgotStep(2);
-            setResendCooldown(60);
+            if (res?.delivered) {
+                Toast.show({
+                    type: "success",
+                    text1: "Code Sent to Gmail 📧",
+                    text2: "Please check your Gmail inbox (and Spam folder) for the 6-digit verification code.",
+                    visibilityTime: 5000,
+                });
+                setForgotStep(2);
+                setResendCooldown(60);
+            } else {
+                Toast.show({
+                    type: "error",
+                    text1: "Gmail Delivery Failed ❌",
+                    text2: res?.message || "Google requires an App Password for Gmail SMTP. Please check your settings.",
+                    visibilityTime: 6000,
+                });
+                // Still allow moving to step 2 if they have the code or retry
+                setForgotStep(2);
+            }
         } catch (err) {
             Toast.show({
                 type: "error",
