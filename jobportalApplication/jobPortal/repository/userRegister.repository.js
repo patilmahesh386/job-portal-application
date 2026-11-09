@@ -53,9 +53,32 @@ const getSavedJobsByUserId = async (userId) => {
   return user ? user.savedJobs : [];
 };
 
+const findByEmail = (email) => {
+  return User.findOne({ email: String(email).toLowerCase().trim() });
+};
+
+const setResetPasswordOtp = (userId, otp, expires) => {
+  return User.findByIdAndUpdate(
+    userId,
+    { resetPasswordOtp: otp, resetPasswordExpires: expires },
+    { new: true }
+  );
+};
+
+const updatePasswordAndClearOtp = (userId, hashedPassword) => {
+  return User.findByIdAndUpdate(
+    userId,
+    { password: hashedPassword, resetPasswordOtp: null, resetPasswordExpires: null },
+    { new: true }
+  );
+};
+
 module.exports = {
   userUpdate,
   findById,
+  findByEmail,
+  setResetPasswordOtp,
+  updatePasswordAndClearOtp,
   readUser,
   createUser,
   userLogin,

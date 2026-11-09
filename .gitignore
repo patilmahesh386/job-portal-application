@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+*/node_modules/
+*/*/node_modules/
+
+# Production builds
+dist/
+build/
+web-build/
+
+# Expo
+.expo/
+.expo-shared/
+
+# Environment variables
+# (keep track of repo structure, but ignore local overrides if needed)
+
+# System files
+.DS_Store
+Thumbs.db
+*.log

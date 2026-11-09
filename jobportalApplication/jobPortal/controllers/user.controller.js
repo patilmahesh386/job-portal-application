@@ -138,3 +138,49 @@ exports.getSavedJobs = async (req, res) => {
   }
 };
 
+// POST /user/forgot-password - Send 6-digit OTP code to Gmail
+exports.forgotPassword = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+    const result = await service.forgotPasswordService(email);
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("Error in forgotPassword:", error.message);
+    const statusCode = error.message.includes("No account") ? 404 : 400;
+    return res.status(statusCode).json({
+      success: false,
+      message: error.message || "Failed to process forgot password request.",
+    });
+  }
+};
+
+// POST /user/verify-otp - Verify 6-digit code
+exports.verifyOtp = async (req, res, next) => {
+  try {
+    const { email, otp } = req.body;
+    const result = await service.verifyOtpService(email, otp);
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("Error in verifyOtp:", error.message);
+    return res.status(400).json({
+      success: false,
+      message: error.message || "Failed to verify code.",
+    });
+  }
+};
+
+// POST /user/reset-password - Update password with valid OTP
+exports.resetPassword = async (req, res, next) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+    const result = await service.resetPasswordService(email, otp, newPassword);
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("Error in resetPassword:", error.message);
+    return res.status(400).json({
+      success: false,
+      message: error.message || "Failed to reset password.",
+    });
+  }
+};
+

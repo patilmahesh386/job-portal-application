@@ -11,6 +11,10 @@ router.post("/user/register",validate(userSchema), controller.createUser)
 
 router.post("/user/login", controller.loginUser)
 
+router.post("/user/forgot-password", controller.forgotPassword)
+router.post("/user/verify-otp", controller.verifyOtp)
+router.post("/user/reset-password", controller.resetPassword)
+
 router.put("/user/profile/:id", controller.updateUser)
 
 router.get("/user/:id", controller.getUserById )

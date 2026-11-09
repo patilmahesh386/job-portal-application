@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "914322814128",
+    "project_id": "jobportal-634db",
+    "storage_bucket": "jobportal-634db.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:914322814128:android:45d13e419ce64a0ff1f775",
+        "android_client_info": {
+          "package_name": "com.kailas.jobportalfrontend"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAVrJKmVGYEkVd4WoruxTui3lVjEroft7E"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
