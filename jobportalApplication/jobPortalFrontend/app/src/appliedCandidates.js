@@ -257,6 +257,24 @@ export default function AppliedCandidates() {
                                         </Text>
                                     </View>
 
+                                    {Boolean(item.applicant?.phone) && (
+                                        <View style={styles.infoRow}>
+                                            <Text style={styles.label}>Phone:</Text>
+                                            <Text style={styles.value}>
+                                                {item.applicant.phone}
+                                            </Text>
+                                        </View>
+                                    )}
+
+                                    {Boolean(item.applicant?.location) && (
+                                        <View style={styles.infoRow}>
+                                            <Text style={styles.label}>Location:</Text>
+                                            <Text style={styles.value}>
+                                                {item.applicant.location}
+                                            </Text>
+                                        </View>
+                                    )}
+
                                     <View style={styles.infoRow}>
                                         <Text style={styles.label}>Skills:</Text>
                                         <Text style={styles.value}>

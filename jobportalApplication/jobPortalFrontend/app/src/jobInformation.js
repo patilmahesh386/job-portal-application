@@ -6,6 +6,7 @@ import {
     Alert,
     Image,
     Linking,
+    Modal,
     Pressable,
     ScrollView,
     Share,
@@ -33,6 +34,8 @@ const JobInformation = () => {
     const isJobSaved = savedJobs.includes(jobId);
 
     const [applying, setApplying] = useState(false);
+    const [profileWarningVisible, setProfileWarningVisible] = useState(false);
+    const [missingFields, setMissingFields] = useState([]);
 
     useEffect(() => {
         if (jobId) {
@@ -40,7 +43,53 @@ const JobInformation = () => {
         }
     }, [dispatch, jobId]);
 
-    const handleApply = async () => {
+    const getCandidateMissingFields = (currentUser) => {
+        const missing = [];
+        if (!currentUser) return missing;
+
+        // 1. Resume (PDF or link)
+        if (!currentUser.resume || (typeof currentUser.resume === "string" && !currentUser.resume.trim())) {
+            missing.push({
+                field: "Resume / CV",
+                description: "Attach your PDF resume or link so recruiters can evaluate your background.",
+                icon: "document-text-outline",
+            });
+        }
+
+        // 2. Phone Number
+        if (!currentUser.phone || (typeof currentUser.phone === "string" && !currentUser.phone.trim())) {
+            missing.push({
+                field: "Phone Number",
+                description: "Add a valid contact number for interview callbacks and updates.",
+                icon: "call-outline",
+            });
+        }
+
+        // 3. Technical Skills
+        const hasSkills = Array.isArray(currentUser.skills) && currentUser.skills.some((s) => typeof s === "string" && s.trim().length > 0);
+        if (!hasSkills) {
+            missing.push({
+                field: "Key Skills",
+                description: "List your key skills and competencies (e.g., React, Java, Design).",
+                icon: "sparkles-outline",
+            });
+        }
+
+        // 4. Education
+        const firstEdu = currentUser.education?.[0];
+        const hasEducation = firstEdu && ((firstEdu.degree && firstEdu.degree.trim()) || (firstEdu.college && firstEdu.college.trim()));
+        if (!hasEducation) {
+            missing.push({
+                field: "Education Details",
+                description: "Enter your degree, college, and graduation year.",
+                icon: "school-outline",
+            });
+        }
+
+        return missing;
+    };
+
+    const handleApply = () => {
         if (!user || !user._id) {
             Toast.show({
                 type: "error",
@@ -59,6 +108,18 @@ const JobInformation = () => {
             return;
         }
 
+        // Check for missing candidate information and give warning
+        const missing = getCandidateMissingFields(user);
+        if (missing.length > 0) {
+            setMissingFields(missing);
+            setProfileWarningVisible(true);
+            return;
+        }
+
+        executeApply();
+    };
+
+    const executeApply = async () => {
         setApplying(true);
         try {
             await dispatch(applyJob(jobId)).unwrap();
@@ -81,10 +142,11 @@ const JobInformation = () => {
             );
         } catch (err) {
             console.log("Error applying for job:", err);
+            const errorMsg = typeof err === "string" ? err : (err?.message || "Could not submit application. Please try again.");
             Toast.show({
                 type: "error",
                 text1: "Application Failed",
-                text2: typeof err === "string" ? err : "Could not submit application. Please try again.",
+                text2: errorMsg,
             });
         } finally {
             setApplying(false);
@@ -501,6 +563,78 @@ const JobInformation = () => {
                     )}
                 </Pressable>
             </View>
+
+            {/* Incomplete Candidate Profile Warning Modal */}
+            <Modal
+                visible={profileWarningVisible}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setProfileWarningVisible(false)}
+            >
+                <View style={styles.warningModalOverlay}>
+                    <View style={styles.warningModalContent}>
+                        {/* Modal Header */}
+                        <View style={styles.warningModalHeader}>
+                            <View style={styles.warningIconCircle}>
+                                <Ionicons name="warning-outline" size={32} color="#D97706" />
+                            </View>
+                            <Text style={styles.warningModalTitle}>Complete Candidate Profile</Text>
+                            <Text style={styles.warningModalSubtitle}>
+                                Recruiters require your candidate details to review your application. Please fill in the following information:
+                            </Text>
+                        </View>
+
+                        {/* List of Missing Fields */}
+                        <ScrollView style={styles.missingFieldsScrollView} showsVerticalScrollIndicator={false}>
+                            {missingFields.map((item, index) => (
+                                <View key={index} style={styles.missingFieldCard}>
+                                    <View style={styles.missingFieldIconBox}>
+                                        <Ionicons name={item.icon} size={18} color="#D97706" />
+                                    </View>
+                                    <View style={styles.missingFieldTextBox}>
+                                        <Text style={styles.missingFieldName}>{item.field}</Text>
+                                        <Text style={styles.missingFieldDesc}>{item.description}</Text>
+                                    </View>
+                                </View>
+                            ))}
+                        </ScrollView>
+
+                        {/* Action Buttons */}
+                        <View style={styles.warningModalActions}>
+                            <TouchableOpacity
+                                style={styles.completeProfileBtn}
+                                onPress={() => {
+                                    setProfileWarningVisible(false);
+                                    router.push("/src/profile");
+                                }}
+                                activeOpacity={0.8}
+                            >
+                                <Ionicons name="person-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                                <Text style={styles.completeProfileBtnText}>Fill Candidate Info Now</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={styles.applyAnywayBtn}
+                                onPress={() => {
+                                    setProfileWarningVisible(false);
+                                    executeApply();
+                                }}
+                                activeOpacity={0.7}
+                            >
+                                <Text style={styles.applyAnywayBtnText}>Continue & Apply Anyway</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={styles.cancelWarningBtn}
+                                onPress={() => setProfileWarningVisible(false)}
+                                activeOpacity={0.7}
+                            >
+                                <Text style={styles.cancelWarningBtnText}>Cancel</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </SafeAreaView>
     );
 };
@@ -935,6 +1069,141 @@ const styles = StyleSheet.create({
     websiteBtnText: {
         fontSize: 13,
         color: "#2563EB",
+        fontWeight: "600",
+    },
+
+    // Incomplete Profile Warning Modal Styles
+    warningModalOverlay: {
+        flex: 1,
+        backgroundColor: "rgba(15, 23, 42, 0.65)",
+        justifyContent: "center",
+        alignItems: "center",
+        padding: 20,
+    },
+    warningModalContent: {
+        backgroundColor: "#FFFFFF",
+        borderRadius: 22,
+        padding: 22,
+        width: "100%",
+        maxWidth: 420,
+        maxHeight: "84%",
+        shadowColor: "#0F172A",
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.25,
+        shadowRadius: 20,
+        elevation: 12,
+    },
+    warningModalHeader: {
+        alignItems: "center",
+        marginBottom: 14,
+    },
+    warningIconCircle: {
+        width: 58,
+        height: 58,
+        borderRadius: 29,
+        backgroundColor: "#FEF3C7",
+        justifyContent: "center",
+        alignItems: "center",
+        marginBottom: 12,
+        borderWidth: 2,
+        borderColor: "#FDE68A",
+    },
+    warningModalTitle: {
+        fontSize: 19,
+        fontWeight: "800",
+        color: "#0F172A",
+        textAlign: "center",
+        marginBottom: 6,
+    },
+    warningModalSubtitle: {
+        fontSize: 13,
+        color: "#64748B",
+        textAlign: "center",
+        lineHeight: 18,
+        paddingHorizontal: 8,
+    },
+    missingFieldsScrollView: {
+        maxHeight: 220,
+        marginVertical: 10,
+    },
+    missingFieldCard: {
+        flexDirection: "row",
+        alignItems: "flex-start",
+        backgroundColor: "#FFFBEB",
+        borderWidth: 1,
+        borderColor: "#FDE68A",
+        borderRadius: 12,
+        padding: 12,
+        marginBottom: 10,
+    },
+    missingFieldIconBox: {
+        width: 32,
+        height: 32,
+        borderRadius: 10,
+        backgroundColor: "#FEF3C7",
+        justifyContent: "center",
+        alignItems: "center",
+        marginRight: 12,
+        marginTop: 2,
+    },
+    missingFieldTextBox: {
+        flex: 1,
+    },
+    missingFieldName: {
+        fontSize: 14,
+        fontWeight: "700",
+        color: "#92400E",
+        marginBottom: 2,
+    },
+    missingFieldDesc: {
+        fontSize: 12,
+        color: "#B45309",
+        lineHeight: 16,
+    },
+    warningModalActions: {
+        marginTop: 12,
+        gap: 8,
+    },
+    completeProfileBtn: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "#2563EB",
+        paddingVertical: 13,
+        borderRadius: 12,
+        shadowColor: "#2563EB",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+        elevation: 2,
+    },
+    completeProfileBtnText: {
+        color: "#FFFFFF",
+        fontSize: 15,
+        fontWeight: "700",
+    },
+    applyAnywayBtn: {
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "#F8FAFC",
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+        paddingVertical: 11,
+        borderRadius: 12,
+    },
+    applyAnywayBtnText: {
+        color: "#475569",
+        fontSize: 13,
+        fontWeight: "600",
+    },
+    cancelWarningBtn: {
+        alignItems: "center",
+        justifyContent: "center",
+        paddingVertical: 8,
+    },
+    cancelWarningBtnText: {
+        color: "#94A3B8",
+        fontSize: 13,
         fontWeight: "600",
     },
 });
