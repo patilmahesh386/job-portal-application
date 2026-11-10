@@ -101,6 +101,30 @@ export default function AppliedCandidates() {
             return;
         }
 
+        if (resumeData.startsWith("data:image/")) {
+            try {
+                const match = resumeData.match(/^data:image\/(\w+);base64,/);
+                const ext = match ? match[1] : "jpg";
+                const base64Content = resumeData.replace(/^data:image\/\w+;base64,/, "");
+                const cacheUri = `${FileSystem?.cacheDirectory || ""}candidate_resume_${Date.now()}.${ext}`;
+                if (FileSystem?.writeAsStringAsync) {
+                    await FileSystem.writeAsStringAsync(cacheUri, base64Content, {
+                        encoding: FileSystem.EncodingType.Base64,
+                    });
+                    const canOpen = await Linking.canOpenURL(cacheUri);
+                    if (canOpen) {
+                        await Linking.openURL(cacheUri);
+                        return;
+                    }
+                }
+                Alert.alert("Resume Image", "Candidate attached an image resume.");
+            } catch (err) {
+                console.log("Error viewing resume image:", err);
+                Alert.alert("Resume Error", "Could not open candidate's resume image.");
+            }
+            return;
+        }
+
         let url = resumeData;
         if (!url.startsWith("http://") && !url.startsWith("https://")) {
             url = "https://" + url;

@@ -7,21 +7,57 @@ import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import api from "../api/axios";
 
-// Safe dynamic accessors so missing native binaries never crash route loading
+// Safe dynamic accessors: check native binary registration before requiring modules to prevent unhandled native errors
+const isDocumentPickerAvailable = () => {
+  try {
+    if (globalThis?.expo?.modules?.ExpoDocumentPicker) {
+      return true;
+    }
+    const core = require("expo-modules-core");
+    if (core && typeof core.requireOptionalNativeModule === "function") {
+      return !!core.requireOptionalNativeModule("ExpoDocumentPicker");
+    }
+    if (core?.NativeModulesProxy?.ExpoDocumentPicker) {
+      return true;
+    }
+  } catch (_) {}
+  return false;
+};
+
 const getDocumentPicker = () => {
   try {
+    if (!isDocumentPickerAvailable()) {
+      return null;
+    }
     return require("expo-document-picker");
   } catch (err) {
-    console.log("expo-document-picker unavailable:", err?.message);
     return null;
   }
 };
 
+const isFileSystemAvailable = () => {
+  try {
+    if (globalThis?.expo?.modules?.ExpoFileSystem) {
+      return true;
+    }
+    const core = require("expo-modules-core");
+    if (core && typeof core.requireOptionalNativeModule === "function") {
+      return !!core.requireOptionalNativeModule("ExpoFileSystem");
+    }
+    if (core?.NativeModulesProxy?.ExpoFileSystem) {
+      return true;
+    }
+  } catch (_) {}
+  return false;
+};
+
 const getFileSystem = () => {
   try {
+    if (!isFileSystemAvailable()) {
+      return null;
+    }
     return require("expo-file-system");
   } catch (err) {
-    console.log("expo-file-system unavailable:", err?.message);
     return null;
   }
 };
@@ -186,6 +222,51 @@ const Profile = () => {
     });
   };
 
+  // Pick resume image from Photos / Gallery
+  const pickResumeFromGallery = async () => {
+    try {
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permissionResult.granted) {
+        Alert.alert(
+          "Permission Required",
+          "Permission to access photo library is required to select your resume image."
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false,
+        quality: 0.85,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const file = result.assets[0];
+        const dataUri = file.base64
+          ? `data:${file.mimeType || "image/jpeg"};base64,${file.base64}`
+          : file.uri;
+
+        const sizeFormatted = file.fileSize
+          ? `${(file.fileSize / 1024).toFixed(1)} KB`
+          : "Resume Image";
+
+        setResumeName(file.fileName || "Resume_Image.jpg");
+        setResumeSize(sizeFormatted);
+        handleChange("resume", dataUri);
+
+        Toast.show({
+          type: "success",
+          text1: "Resume Image Attached 📄",
+          text2: "Tap 'Save & Update Profile' to apply.",
+        });
+      }
+    } catch (err) {
+      console.log("Error selecting resume image:", err);
+      Alert.alert("Selection Error", "Could not select resume image. Please try again.");
+    }
+  };
+
   // PDF Document Picker for Resume - Opens native files or in-app file chooser
   const pickPdfResume = async () => {
     // 1. First, attempt to pick via native DocumentPicker if module is active
@@ -262,10 +343,7 @@ const Profile = () => {
         }
       }
     } catch (pickerErr) {
-      console.log(
-        "Native DocumentPicker unavailable or threw, launching device file browser:",
-        pickerErr?.message
-      );
+      console.log("DocumentPicker threw, falling back to file browser:", pickerErr?.message);
     }
 
     // 2. Seamless Fallback: Launch in-app file chooser that natively opens device files / file manager
@@ -316,9 +394,35 @@ const Profile = () => {
       setShowUrlInput(true);
       Alert.alert(
         "File Selection",
-        "Could not automatically open device file manager. You can enter your resume link below."
+        "Could not automatically open device file manager. You can enter your resume link below or choose from Gallery."
       );
     }
+  };
+
+  // Master Resume selection dialog giving the user complete flexibility
+  const handleResumePress = () => {
+    Alert.alert(
+      "Attach Resume",
+      "Choose how you want to attach your resume:",
+      [
+        {
+          text: "📄 Choose PDF File",
+          onPress: pickPdfResume,
+        },
+        {
+          text: "🖼️ Choose from Gallery / Photos",
+          onPress: pickResumeFromGallery,
+        },
+        {
+          text: "🔗 Enter Resume Web Link",
+          onPress: () => setShowUrlInput(true),
+        },
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+      ]
+    );
   };
 
   const handleRemoveResume = () => {
@@ -360,6 +464,32 @@ const Profile = () => {
         console.log("Error opening base64 PDF:", err);
       }
       Alert.alert("PDF Document", `PDF resume is attached (${resumeName || "Resume.pdf"}).`);
+      return;
+    }
+
+    // Base64 Image data URI (Gallery/photo resumes)
+    if (rawResume.startsWith("data:image/")) {
+      try {
+        const match = rawResume.match(/^data:image\/(\w+);base64,/);
+        const ext = match ? match[1] : "jpg";
+        const fs = getFileSystem();
+        if (fs && fs.cacheDirectory && typeof fs.writeAsStringAsync === "function") {
+          const base64Data = rawResume.replace(/^data:image\/\w+;base64,/, "");
+          const cacheUri = `${fs.cacheDirectory}preview_${Date.now()}.${ext}`;
+          await fs.writeAsStringAsync(cacheUri, base64Data, {
+            encoding: fs.EncodingType.Base64,
+          });
+
+          const canOpen = await Linking.canOpenURL(cacheUri);
+          if (canOpen) {
+            await Linking.openURL(cacheUri);
+            return;
+          }
+        }
+      } catch (err) {
+        console.log("Error opening resume image:", err);
+      }
+      Alert.alert("Resume Image", `Resume image is attached (${resumeName || "Resume_Image.jpg"}).`);
       return;
     }
 
@@ -1094,7 +1224,7 @@ const Profile = () => {
 
                   <TouchableOpacity
                     style={styles.pdfReplaceBtn}
-                    onPress={pickPdfResume}
+                    onPress={handleResumePress}
                     activeOpacity={0.7}
                   >
                     <Ionicons name="swap-horizontal-outline" size={15} color="#475569" style={{ marginRight: 4 }} />
@@ -1114,19 +1244,19 @@ const Profile = () => {
               /* PDF Upload Dropzone */
               <TouchableOpacity
                 style={styles.pdfUploadZone}
-                onPress={pickPdfResume}
+                onPress={handleResumePress}
                 activeOpacity={0.8}
               >
                 <View style={styles.pdfUploadIconCircle}>
                   <Ionicons name="cloud-upload-outline" size={32} color="#2563EB" />
                 </View>
-                <Text style={styles.pdfUploadTitle}>Upload Resume in PDF Format</Text>
+                <Text style={styles.pdfUploadTitle}>Upload Resume Document</Text>
                 <Text style={styles.pdfUploadSubtitle}>
-                  Tap here to browse and select your resume (.pdf) from your device
+                  Tap here to select your resume (PDF or Image) from your device
                 </Text>
                 <View style={styles.pdfPillBadge}>
                   <Ionicons name="document-attach-outline" size={13} color="#2563EB" style={{ marginRight: 4 }} />
-                  <Text style={styles.pdfPillText}>PDF Document • Max 5 MB</Text>
+                  <Text style={styles.pdfPillText}>PDF or Image • Max 5 MB</Text>
                 </View>
               </TouchableOpacity>
             )}
