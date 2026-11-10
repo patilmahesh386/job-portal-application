@@ -7,7 +7,8 @@ export const applyJob = createAsyncThunk(
             const response = await AppliedJobService.applyForJobs(jobId);
             return response.data;
         } catch (error) {
-            return thunkApi.rejectWithValue(error.response?.data || "Failed to apply");
+            const message = error.response?.data?.message || (typeof error.response?.data === "string" ? error.response.data : "Failed to apply");
+            return thunkApi.rejectWithValue(message);
         }
     }
 );

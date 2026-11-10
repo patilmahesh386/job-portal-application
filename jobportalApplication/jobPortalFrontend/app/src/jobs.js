@@ -39,7 +39,7 @@ const Jobs = () => {
         dispatch(getJobPost(search));
     };
 
-    const handleApply = (jobId) => {
+    const handleApply = async (jobId) => {
         if (!user || !user._id) {
             Toast.show({
                 type: 'error',
@@ -54,21 +54,31 @@ const Jobs = () => {
             });
             return;
         }
-        dispatch(applyJob(jobId));
-        console.log(jobId);
-        Toast.show({
-            type: 'success',
-            text1: 'you are successfully applied for this job'
-        });
-        dispatch(sendNotification({
-            userId,
-            title: 'Applied For Job 🎉',
-            body: 'You have successfully applied for this job.',
-            data: {
-                type: 'JOB',
-                userId: user?._id
-            }
-        }));
+        try {
+            await dispatch(applyJob(jobId)).unwrap();
+            Toast.show({
+                type: 'success',
+                text1: 'Applied successfully! 🎉',
+                text2: 'Your application has been submitted to the recruiter.'
+            });
+            dispatch(sendNotification({
+                userId,
+                title: 'Applied For Job 🎉',
+                body: 'You have successfully applied for this job.',
+                data: {
+                    type: 'JOB',
+                    userId: user?._id
+                }
+            }));
+        } catch (err) {
+            console.log("Apply error:", err);
+            const errorMsg = typeof err === 'string' ? err : (err?.message || 'Could not submit application.');
+            Toast.show({
+                type: 'error',
+                text1: 'Application Failed',
+                text2: errorMsg
+            });
+        }
     };
 
     const handleSave = (jobId) => {
