@@ -91,6 +91,14 @@ const Jobs = () => {
 
             <View style={styles.cardContent}>
                 <TouchableOpacity onPress={() => { router.push({ pathname: "/src/jobInformation", params: { jobId: item._id } }) }}>
+                    {Boolean(item.companyName || item.createBy?.companyName) && (
+                        <View style={styles.companyBadgeRow}>
+                            <Ionicons name="business" size={13} color="#2563EB" style={{ marginRight: 4 }} />
+                            <Text style={styles.companyBadgeText} numberOfLines={1}>
+                                {item.companyName || item.createBy?.companyName}
+                            </Text>
+                        </View>
+                    )}
                     <Text style={styles.title} numberOfLines={2}>{item.title}</Text>
                     <Text style={styles.description} numberOfLines={3}>{item.jobSummary}</Text>
                 </TouchableOpacity>
@@ -447,5 +455,15 @@ const styles = StyleSheet.create({
         color: "#666",
         textAlign: "center",
         maxWidth: "80%",
+    },
+    companyBadgeRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        marginBottom: 4,
+    },
+    companyBadgeText: {
+        fontSize: 13,
+        fontWeight: "700",
+        color: "#2563EB",
     },
 });

@@ -10,6 +10,14 @@ const jobSchema = joi.object({
     "any.required": "Job Title is required",
   }),
 
+  // Company Information
+  companyName: joi.string().trim().allow("", null),
+  companyWebsite: joi.string().trim().allow("", null),
+  companyIndustry: joi.string().trim().allow("", null),
+  companySize: joi.string().trim().allow("", null),
+  companyAbout: joi.string().trim().allow("", null),
+  companyLogo: joi.string().allow("", null),
+
   jobSummary: joi.string().trim().min(10).required().messages({
     "string.empty": "Job Summary is required",
     "string.min": "Job Summary must be at least 10 characters long",

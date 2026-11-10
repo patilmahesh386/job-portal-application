@@ -45,12 +45,17 @@ const PostJob = () => {
 
     const [jobData, setJobData] = useState({
         title: "",
+        companyName: user?.companyName || "",
+        companyWebsite: user?.companyWebsite || "",
+        companyIndustry: user?.companyIndustry || "",
+        companySize: user?.companySize || "",
+        companyAbout: user?.companyAbout || "",
         jobSummary: "",
         vacancy: "",
         template: "",
-        jobLocation: "",
+        jobLocation: user?.companyLocation || user?.location || "",
         salary: "",
-        jobType: "",
+        jobType: "Full-Time",
         experience: "",
         deadline: "", // Stored clean as ISO string format
     });
@@ -80,6 +85,23 @@ const PostJob = () => {
             errors.push("Job Title must be at least 3 characters long.");
         } else if (titleTrimmed.length > 120) {
             errors.push("Job Title cannot exceed 120 characters.");
+        }
+
+        // Company Name validation
+        const companyNameTrimmed = String(jobData.companyName || "").trim();
+        if (!companyNameTrimmed) {
+            errors.push("Company / Organization Name is required. Please specify the hiring company.");
+        } else if (companyNameTrimmed.length < 2) {
+            errors.push("Company Name must be at least 2 characters long.");
+        }
+
+        // Company Website validation (Optional, but if given must be valid)
+        if (jobData.companyWebsite && jobData.companyWebsite.trim().length > 0) {
+            const websiteUrl = jobData.companyWebsite.trim();
+            const urlPattern = /^(https?:\/\/)?(www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_+.~#?&//=]*)$/i;
+            if (!urlPattern.test(websiteUrl)) {
+                errors.push("Company Website must be a valid URL (e.g. https://company.com).");
+            }
         }
 
         if (!jobData.jobSummary?.trim()) {
@@ -129,8 +151,22 @@ const PostJob = () => {
 
         setLoading(true);
         try {
+            let formattedCompanyWebsite = jobData.companyWebsite ? jobData.companyWebsite.trim() : "";
+            if (
+                formattedCompanyWebsite &&
+                !formattedCompanyWebsite.startsWith("http://") &&
+                !formattedCompanyWebsite.startsWith("https://")
+            ) {
+                formattedCompanyWebsite = "https://" + formattedCompanyWebsite;
+            }
+
             const payload = {
                 ...jobData,
+                companyName: companyNameTrimmed,
+                companyWebsite: formattedCompanyWebsite,
+                companyIndustry: jobData.companyIndustry ? jobData.companyIndustry.trim() : "",
+                companySize: jobData.companySize ? jobData.companySize.trim() : "",
+                companyAbout: jobData.companyAbout ? jobData.companyAbout.trim() : "",
                 vacancy: Number(jobData.vacancy),
                 salary: Number(salaryTrimmed),
                 experience: Number(experienceTrimmed),
@@ -159,12 +195,17 @@ const PostJob = () => {
 
             setJobData({
                 title: "",
+                companyName: user?.companyName || "",
+                companyWebsite: user?.companyWebsite || "",
+                companyIndustry: user?.companyIndustry || "",
+                companySize: user?.companySize || "",
+                companyAbout: user?.companyAbout || "",
                 jobSummary: "",
                 vacancy: "",
                 template: "",
-                jobLocation: "",
+                jobLocation: user?.companyLocation || user?.location || "",
                 salary: "",
-                jobType: "",
+                jobType: "Full-Time",
                 experience: "",
                 deadline: "",
             });
@@ -344,6 +385,89 @@ const PostJob = () => {
                             </Text>
                         </Pressable>
                         <Text style={styles.fieldHelper}>Optional promotional banner image (PNG or JPG)</Text>
+
+                        {/* Company Information Section */}
+                        <View style={styles.companyCard}>
+                            <View style={styles.companyCardHeader}>
+                                <View style={styles.companyIconBox}>
+                                    <Ionicons name="business" size={18} color="#2563EB" />
+                                </View>
+                                <View style={{ flex: 1, marginLeft: 10 }}>
+                                    <Text style={styles.companyCardTitle}>Company Information</Text>
+                                    <Text style={styles.companyCardSubtitle}>
+                                        Displayed on the job card & details page for job seekers
+                                    </Text>
+                                </View>
+                            </View>
+
+                            {/* Company Name */}
+                            <Text style={styles.label}>Company / Organization Name *</Text>
+                            <TextInput
+                                style={styles.input}
+                                placeholder="e.g. Google, Tata Consultancy Services, Startup Inc."
+                                placeholderTextColor="#94A3B8"
+                                keyboardType="default"
+                                autoCapitalize="words"
+                                value={jobData.companyName}
+                                onChangeText={(text) => handleChange("companyName", text)}
+                            />
+                            <Text style={styles.fieldHelper}>Official hiring organization name (min 2 chars)</Text>
+
+                            {/* Company Website */}
+                            <Text style={styles.label}>Company Website (Optional)</Text>
+                            <TextInput
+                                style={styles.input}
+                                placeholder="e.g. https://www.company.com"
+                                placeholderTextColor="#94A3B8"
+                                keyboardType="url"
+                                autoCapitalize="none"
+                                value={jobData.companyWebsite}
+                                onChangeText={(text) => handleChange("companyWebsite", text)}
+                            />
+                            <Text style={styles.fieldHelper}>Website URL or career portal link</Text>
+
+                            {/* Industry & Size Grid */}
+                            <View style={styles.inputGridRow}>
+                                <View style={styles.flexItem}>
+                                    <Text style={styles.label}>Industry (Optional)</Text>
+                                    <TextInput
+                                        style={styles.input}
+                                        placeholder="e.g. IT & Software"
+                                        placeholderTextColor="#94A3B8"
+                                        keyboardType="default"
+                                        autoCapitalize="words"
+                                        value={jobData.companyIndustry}
+                                        onChangeText={(text) => handleChange("companyIndustry", text)}
+                                    />
+                                </View>
+                                <View style={styles.flexItem}>
+                                    <Text style={styles.label}>Company Size (Optional)</Text>
+                                    <TextInput
+                                        style={styles.input}
+                                        placeholder="e.g. 51-200 emp"
+                                        placeholderTextColor="#94A3B8"
+                                        keyboardType="default"
+                                        value={jobData.companySize}
+                                        onChangeText={(text) => handleChange("companySize", text)}
+                                    />
+                                </View>
+                            </View>
+
+                            {/* About Company */}
+                            <Text style={styles.label}>About the Company (Optional)</Text>
+                            <TextInput
+                                style={[styles.input, styles.multilineInput]}
+                                placeholder="Brief overview of the organization, team, products, or culture..."
+                                placeholderTextColor="#94A3B8"
+                                keyboardType="default"
+                                multiline
+                                numberOfLines={3}
+                                textAlignVertical="top"
+                                value={jobData.companyAbout}
+                                onChangeText={(text) => handleChange("companyAbout", text)}
+                            />
+                            <Text style={styles.fieldHelper}>Helps candidates understand what your company does</Text>
+                        </View>
 
                         {/* Job Summary */}
                         <Text style={styles.label}>Job Summary *</Text>
@@ -859,5 +983,43 @@ const styles = StyleSheet.create({
         fontSize: 15,
         fontWeight: "700",
         color: "#FFFFFF",
+    },
+
+    // Company Information Card
+    companyCard: {
+        backgroundColor: "#F8FAFC",
+        borderWidth: 1.5,
+        borderColor: "#BFDBFE",
+        borderRadius: 14,
+        padding: 16,
+        marginVertical: 14,
+    },
+    companyCardHeader: {
+        flexDirection: "row",
+        alignItems: "center",
+        marginBottom: 12,
+        paddingBottom: 10,
+        borderBottomWidth: 1,
+        borderBottomColor: "#E2E8F0",
+    },
+    companyIconBox: {
+        width: 38,
+        height: 38,
+        borderRadius: 10,
+        backgroundColor: "#EFF6FF",
+        justifyContent: "center",
+        alignItems: "center",
+        borderWidth: 1,
+        borderColor: "#DBEAFE",
+    },
+    companyCardTitle: {
+        fontSize: 15,
+        fontWeight: "700",
+        color: "#1E293B",
+    },
+    companyCardSubtitle: {
+        fontSize: 11,
+        color: "#64748B",
+        marginTop: 1,
     },
 });

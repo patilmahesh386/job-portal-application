@@ -39,6 +39,11 @@ exports.createPost = async (req, res, next) => {
     const data = {
       ...req.body,
       title: String(req.body.title || "").trim(),
+      companyName: req.body.companyName ? String(req.body.companyName).trim() : (user.companyName || ""),
+      companyWebsite: req.body.companyWebsite ? String(req.body.companyWebsite).trim() : (user.companyWebsite || ""),
+      companyIndustry: req.body.companyIndustry ? String(req.body.companyIndustry).trim() : (user.companyIndustry || ""),
+      companySize: req.body.companySize ? String(req.body.companySize).trim() : (user.companySize || ""),
+      companyAbout: req.body.companyAbout ? String(req.body.companyAbout).trim() : (user.companyAbout || ""),
       jobLocation: req.body.jobLocation || req.body.location,
       vacancy: Number(req.body.vacancy),
       salary: Number(req.body.salary),

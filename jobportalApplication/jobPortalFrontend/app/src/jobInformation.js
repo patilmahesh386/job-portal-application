@@ -5,6 +5,7 @@ import {
     ActivityIndicator,
     Alert,
     Image,
+    Linking,
     Pressable,
     ScrollView,
     Share,
@@ -257,7 +258,7 @@ const JobInformation = () => {
                         </View>
                         <View style={styles.companyTextWrap}>
                             <Text style={styles.companyName}>
-                                {job?.createBy?.name || "Verified Hiring Partner"}
+                                {job?.companyName || job?.createBy?.companyName || job?.createBy?.name || "Verified Hiring Partner"}
                             </Text>
                             {formattedDate && (
                                 <Text style={styles.postedOnText}>Posted on {formattedDate}</Text>
@@ -372,6 +373,87 @@ const JobInformation = () => {
                         </Text>
                     </View>
                 </View>
+
+                {/* About the Hiring Company Card */}
+                {(job?.companyName || job?.createBy?.companyName || job?.companyAbout || job?.createBy?.companyAbout) && (
+                    <View style={styles.sectionCard}>
+                        <View style={styles.sectionTitleRow}>
+                            <Ionicons name="business-outline" size={20} color="#2563EB" style={{ marginRight: 8 }} />
+                            <Text style={styles.sectionTitle}>About the Company</Text>
+                        </View>
+
+                        <View style={styles.companyOverviewBox}>
+                            <View style={styles.companyOverviewHeader}>
+                                <View style={styles.companyLogoBadge}>
+                                    <Ionicons name="business" size={22} color="#2563EB" />
+                                </View>
+                                <View style={{ flex: 1, marginLeft: 12 }}>
+                                    <Text style={styles.companyOverviewName}>
+                                        {job?.companyName || job?.createBy?.companyName || "Hiring Partner"}
+                                    </Text>
+                                    {Boolean(job?.companyIndustry || job?.createBy?.companyIndustry) && (
+                                        <Text style={styles.companyOverviewIndustry}>
+                                            {job?.companyIndustry || job?.createBy?.companyIndustry}
+                                        </Text>
+                                    )}
+                                </View>
+                            </View>
+
+                            {Boolean(job?.companyAbout || job?.createBy?.companyAbout) && (
+                                <Text style={styles.companyAboutText}>
+                                    {job?.companyAbout || job?.createBy?.companyAbout}
+                                </Text>
+                            )}
+
+                            {/* Company Meta Pills */}
+                            <View style={styles.companyMetaPillsRow}>
+                                {Boolean(job?.companySize || job?.createBy?.companySize) && (
+                                    <View style={styles.companyMetaPill}>
+                                        <Ionicons name="people-outline" size={13} color="#475569" style={{ marginRight: 4 }} />
+                                        <Text style={styles.companyMetaPillText}>
+                                            {job?.companySize || job?.createBy?.companySize} emp
+                                        </Text>
+                                    </View>
+                                )}
+                                {Boolean(job?.jobLocation || job?.companyLocation || job?.createBy?.companyLocation) && (
+                                    <View style={styles.companyMetaPill}>
+                                        <Ionicons name="location-outline" size={13} color="#475569" style={{ marginRight: 4 }} />
+                                        <Text style={styles.companyMetaPillText}>
+                                            {job?.jobLocation || job?.companyLocation || job?.createBy?.companyLocation}
+                                        </Text>
+                                    </View>
+                                )}
+                                {Boolean(job?.createBy?.name) && (
+                                    <View style={styles.companyMetaPill}>
+                                        <Ionicons name="person-outline" size={13} color="#475569" style={{ marginRight: 4 }} />
+                                        <Text style={styles.companyMetaPillText}>
+                                            Posted by {job.createBy.name}
+                                            {job.createBy.designation ? ` (${job.createBy.designation})` : ""}
+                                        </Text>
+                                    </View>
+                                )}
+                            </View>
+
+                            {/* Website Link Button */}
+                            {Boolean(job?.companyWebsite || job?.createBy?.companyWebsite) && (
+                                <TouchableOpacity
+                                    style={styles.websiteBtn}
+                                    onPress={() => {
+                                        const url = job?.companyWebsite || job?.createBy?.companyWebsite;
+                                        if (url) {
+                                            Linking.openURL(url.startsWith("http") ? url : `https://${url}`);
+                                        }
+                                    }}
+                                    activeOpacity={0.8}
+                                >
+                                    <Ionicons name="globe-outline" size={15} color="#2563EB" style={{ marginRight: 6 }} />
+                                    <Text style={styles.websiteBtnText}>Visit Company Website</Text>
+                                    <Ionicons name="open-outline" size={14} color="#2563EB" style={{ marginLeft: 4 }} />
+                                </TouchableOpacity>
+                            )}
+                        </View>
+                    </View>
+                )}
 
                 {/* Safety & Advisory Notice */}
                 <View style={styles.noticeCard}>
@@ -776,5 +858,83 @@ const styles = StyleSheet.create({
         color: "#FFFFFF",
         fontSize: 16,
         fontWeight: "700",
+    },
+
+    // About the Company Styles
+    companyOverviewBox: {
+        backgroundColor: "#F8FAFC",
+        borderRadius: 14,
+        padding: 14,
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+    },
+    companyOverviewHeader: {
+        flexDirection: "row",
+        alignItems: "center",
+        marginBottom: 10,
+    },
+    companyLogoBadge: {
+        width: 44,
+        height: 44,
+        borderRadius: 12,
+        backgroundColor: "#EFF6FF",
+        justifyContent: "center",
+        alignItems: "center",
+        borderWidth: 1,
+        borderColor: "#DBEAFE",
+    },
+    companyOverviewName: {
+        fontSize: 16,
+        fontWeight: "700",
+        color: "#0F172A",
+    },
+    companyOverviewIndustry: {
+        fontSize: 12,
+        color: "#2563EB",
+        fontWeight: "600",
+        marginTop: 2,
+    },
+    companyAboutText: {
+        fontSize: 14,
+        color: "#475569",
+        lineHeight: 20,
+        marginBottom: 12,
+    },
+    companyMetaPillsRow: {
+        flexDirection: "row",
+        flexWrap: "wrap",
+        gap: 6,
+        marginBottom: 12,
+    },
+    companyMetaPill: {
+        flexDirection: "row",
+        alignItems: "center",
+        backgroundColor: "#FFFFFF",
+        paddingHorizontal: 9,
+        paddingVertical: 5,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+    },
+    companyMetaPillText: {
+        fontSize: 11,
+        color: "#475569",
+        fontWeight: "500",
+    },
+    websiteBtn: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "#EFF6FF",
+        paddingVertical: 10,
+        paddingHorizontal: 14,
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: "#BFDBFE",
+    },
+    websiteBtnText: {
+        fontSize: 13,
+        color: "#2563EB",
+        fontWeight: "600",
     },
 });

@@ -8,6 +8,36 @@ const JobSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  // Company Information for this job
+  companyName: {
+    type: String,
+    default: "",
+    trim: true,
+  },
+  companyWebsite: {
+    type: String,
+    default: "",
+    trim: true,
+  },
+  companyIndustry: {
+    type: String,
+    default: "",
+    trim: true,
+  },
+  companySize: {
+    type: String,
+    default: "",
+    trim: true,
+  },
+  companyAbout: {
+    type: String,
+    default: "",
+    trim: true,
+  },
+  companyLogo: {
+    type: String,
+    default: "",
+  },
   template: {
     type: String,
   },
