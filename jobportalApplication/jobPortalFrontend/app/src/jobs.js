@@ -19,6 +19,7 @@ import Toast from "react-native-toast-message";
 import { useDispatch, useSelector } from "react-redux";
 import { applyJob } from "../redux/appliedJobs";
 import { addSavedJobs, getJobPost, toggleSaveJob } from "../redux/jobPostSlice";
+import { sendNotification } from "../redux/notificationSlice";
 
 const Jobs = () => {
     const user = useSelector((state) => state.auth.user);
