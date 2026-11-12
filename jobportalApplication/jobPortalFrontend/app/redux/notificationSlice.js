@@ -1,5 +1,9 @@
 import { createAsyncThunk, createSlice } from '@reduxjs/toolkit';
-import { registerPushTokenWithBackend, sendNotificationWithBackend } from '../service/notification';
+import {
+    notifyCandidatesNewJobWithBackend,
+    registerPushTokenWithBackend,
+    sendNotificationWithBackend,
+} from '../service/notification';
 
 // Async Thunk calls the service method, not Axios directly
 export const registerPushToken = createAsyncThunk(
@@ -31,6 +35,22 @@ export const sendNotification = createAsyncThunk(
                 success: false,
                 skipped: true,
                 message: error.response?.data?.message || error.message || "Notification skipped",
+            };
+        }
+    }
+);
+
+export const notifyCandidatesNewJob = createAsyncThunk(
+    "notification/notifyCandidatesNewJob",
+    async (jobData, thunkApi) => {
+        try {
+            const response = await notifyCandidatesNewJobWithBackend(jobData);
+            return response;
+        } catch (error) {
+            return {
+                success: false,
+                skipped: true,
+                message: error.response?.data?.message || error.message || "Broadcast skipped",
             };
         }
     }

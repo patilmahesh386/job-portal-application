@@ -53,6 +53,19 @@ function RootLayoutInner() {
           router.push("/src/jobs");
         }, 150);
       }
+      if (customData?.type === "NEW_JOB_POSTED" || customData?.jobId) {
+        console.log("Navigating to Job Details / Jobs route...");
+        setTimeout(() => {
+          if (customData.jobId) {
+            router.push({
+              pathname: "/src/jobInformation",
+              params: { jobId: customData.jobId },
+            });
+          } else {
+            router.push("/src/jobs");
+          }
+        }, 150);
+      }
     };
 
     const cleanupListeners = setupNotificationListeners(

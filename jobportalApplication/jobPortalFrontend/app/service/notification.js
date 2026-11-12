@@ -36,3 +36,15 @@ export const sendNotificationWithBackend = async (userId, title, body, data) => 
         return { success: false, message: errorMsg, skipped: true };
     }
 };
+
+export const notifyCandidatesNewJobWithBackend = async (jobData) => {
+    try {
+        const response = await api.post('/notify/new-job', jobData);
+        console.log('Candidates Notification Response:', response.data);
+        return response.data;
+    } catch (error) {
+        const errorMsg = error.response?.data?.message || error.message;
+        console.log('Notice: Candidate notification not delivered:', errorMsg);
+        return { success: false, message: errorMsg, skipped: true };
+    }
+};

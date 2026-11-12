@@ -47,8 +47,22 @@ const getHistory = async (req, res) => {
   }
 };
 
+const notifyNewJob = async (req, res) => {
+  try {
+    const job = req.body;
+    if (!job || !job.title) {
+      return res.status(400).json({ success: false, message: 'Job details (title) are required' });
+    }
+    const result = await notificationService.notifyCandidatesOnNewJob(job, req.user || {});
+    return res.status(200).json({ success: true, message: 'Candidates notified successfully', data: result });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   registerToken,
   sendNotification,
   getHistory,
+  notifyNewJob,
 };

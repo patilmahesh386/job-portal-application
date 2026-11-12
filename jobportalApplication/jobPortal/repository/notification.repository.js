@@ -17,6 +17,10 @@ const getActiveTokensByUserId = async (userId) => {
   return await UserPushToken.find({ userId, isActive: true });
 };
 
+const getActiveTokensByUserIds = async (userIds) => {
+  return await UserPushToken.find({ userId: { $in: userIds }, isActive: true });
+};
+
 const createNotificationLog = async ({ userId, title, body, data, status, error }) => {
   return await Notification.create({
     userId,
@@ -26,6 +30,11 @@ const createNotificationLog = async ({ userId, title, body, data, status, error 
     status,
     error,
   });
+};
+
+const createNotificationsBatch = async (docs) => {
+  if (!docs || docs.length === 0) return [];
+  return await Notification.insertMany(docs, { ordered: false });
 };
 
 const getNotificationsByUserId = async (userId, limit = 20) => {
@@ -38,6 +47,8 @@ module.exports = {
   saveOrUpdatePushToken,
   deactivatePushToken,
   getActiveTokensByUserId,
+  getActiveTokensByUserIds,
   createNotificationLog,
+  createNotificationsBatch,
   getNotificationsByUserId,
 };

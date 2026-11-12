@@ -7,59 +7,34 @@ import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import api from "../api/axios";
 
-// Safe dynamic accessors: check native binary registration before requiring modules to prevent unhandled native errors
-const isDocumentPickerAvailable = () => {
-  try {
-    if (globalThis?.expo?.modules?.ExpoDocumentPicker) {
-      return true;
-    }
-    const core = require("expo-modules-core");
-    if (core && typeof core.requireOptionalNativeModule === "function") {
-      return !!core.requireOptionalNativeModule("ExpoDocumentPicker");
-    }
-    if (core?.NativeModulesProxy?.ExpoDocumentPicker) {
-      return true;
-    }
-  } catch (_) {}
-  return false;
-};
-
-const getDocumentPicker = () => {
-  try {
-    if (!isDocumentPickerAvailable()) {
-      return null;
-    }
-    return require("expo-document-picker");
-  } catch (err) {
-    return null;
+// Safely probe for native ExpoDocumentPicker without throwing if not linked
+let ExpoDocumentPickerModule = null;
+try {
+  const { requireOptionalNativeModule } = require("expo-modules-core");
+  if (requireOptionalNativeModule && requireOptionalNativeModule("ExpoDocumentPicker")) {
+    ExpoDocumentPickerModule = require("expo-document-picker");
   }
-};
+} catch (_) {
+  ExpoDocumentPickerModule = null;
+}
 
-const isFileSystemAvailable = () => {
-  try {
-    if (globalThis?.expo?.modules?.ExpoFileSystem) {
-      return true;
-    }
-    const core = require("expo-modules-core");
-    if (core && typeof core.requireOptionalNativeModule === "function") {
-      return !!core.requireOptionalNativeModule("ExpoFileSystem");
-    }
-    if (core?.NativeModulesProxy?.ExpoFileSystem) {
-      return true;
-    }
-  } catch (_) {}
-  return false;
-};
+// Safely probe for native ExpoFileSystem
+let FileSystemModule = null;
+try {
+  FileSystemModule = require("expo-file-system");
+} catch (_) {
+  FileSystemModule = null;
+}
 
-const getFileSystem = () => {
-  try {
-    if (!isFileSystemAvailable()) {
-      return null;
-    }
-    return require("expo-file-system");
-  } catch (err) {
-    return null;
-  }
+// Helpers to identify file types and links
+const isBase64File = (val) => typeof val === "string" && val.startsWith("data:");
+const isUrlLink = (val) =>
+  typeof val === "string" &&
+  /^(https?:\/\/|[a-zA-Z0-9-]+\.[a-zA-Z]{2,})/i.test(val.trim());
+const isGoogleDriveUrl = (url) => {
+  if (!url || typeof url !== "string") return false;
+  const trimmed = url.trim();
+  return /^(https?:\/\/)?(drive\.google\.com|docs\.google\.com)\/.+$/i.test(trimmed);
 };
 import {
   ActivityIndicator,
@@ -93,15 +68,20 @@ const Profile = () => {
   const [validationModalVisible, setValidationModalVisible] = useState(false);
   const [validationErrors, setValidationErrors] = useState([]);
   const [imageTooLargeModalVisible, setImageTooLargeModalVisible] = useState(false);
+  const [imageModalVisible, setImageModalVisible] = useState(false);
   const [showUrlInput, setShowUrlInput] = useState(false);
 
   const [resumeName, setResumeName] = useState(() => {
     if (user?.resume) {
       if (user.resume.startsWith("data:application/pdf")) {
         return "Resume.pdf";
+      } else if (user.resume.startsWith("data:image")) {
+        return "Resume_Scan.jpg";
+      } else if (user.resume.startsWith("data:")) {
+        return "Resume_Document";
       } else if (user.resume.startsWith("http")) {
         const parts = user.resume.split("/");
-        return parts[parts.length - 1] || "Resume.pdf";
+        return parts[parts.length - 1] || "Resume_Link";
       }
     }
     return "";
@@ -154,9 +134,13 @@ const Profile = () => {
       if (user.resume) {
         if (user.resume.startsWith("data:application/pdf")) {
           setResumeName("Resume.pdf");
+        } else if (user.resume.startsWith("data:image")) {
+          setResumeName("Resume_Scan.jpg");
+        } else if (user.resume.startsWith("data:")) {
+          setResumeName("Resume_Document");
         } else if (user.resume.startsWith("http")) {
           const parts = user.resume.split("/");
-          setResumeName(parts[parts.length - 1] || "Resume.pdf");
+          setResumeName(parts[parts.length - 1] || "Resume_Link");
         }
       }
     }
@@ -222,293 +206,312 @@ const Profile = () => {
     });
   };
 
-  // Pick resume image from Photos / Gallery
-  const pickResumeFromGallery = async () => {
-    try {
-      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permissionResult.granted) {
-        Alert.alert(
-          "Permission Required",
-          "Permission to access photo library is required to select your resume image."
-        );
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: false,
-        quality: 0.85,
-        base64: true,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const file = result.assets[0];
-        const dataUri = file.base64
-          ? `data:${file.mimeType || "image/jpeg"};base64,${file.base64}`
-          : file.uri;
-
-        const sizeFormatted = file.fileSize
-          ? `${(file.fileSize / 1024).toFixed(1)} KB`
-          : "Resume Image";
-
-        setResumeName(file.fileName || "Resume_Image.jpg");
-        setResumeSize(sizeFormatted);
-        handleChange("resume", dataUri);
-
-        Toast.show({
-          type: "success",
-          text1: "Resume Image Attached 📄",
-          text2: "Tap 'Save & Update Profile' to apply.",
-        });
-      }
-    } catch (err) {
-      console.log("Error selecting resume image:", err);
-      Alert.alert("Selection Error", "Could not select resume image. Please try again.");
+  const handleAvatarPress = () => {
+    if (profile.profileImage) {
+      setImageModalVisible(true);
+    } else {
+      pickImage();
     }
   };
 
-  // PDF Document Picker for Resume - Opens native files or in-app file chooser
-  const pickPdfResume = async () => {
-    // 1. First, attempt to pick via native DocumentPicker if module is active
-    try {
-      const dp = getDocumentPicker();
-      const getDocumentAsync = dp?.getDocumentAsync || dp?.default?.getDocumentAsync;
+  // Pick resume file directly from device storage (PDF / DOC)
+  const handlePickResumeFile = async () => {
+    // 1. Web browser environment
+    if (Platform.OS === "web") {
+      try {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = ".pdf,.doc,.docx,application/pdf,image/*";
+        input.onchange = (e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = () => {
+            handleChange("resume", reader.result);
+            setResumeName(file.name);
+            setResumeSize(`${(file.size / (1024 * 1024)).toFixed(2)} MB`);
+            Toast.show({
+              type: "success",
+              text1: "Resume File Attached",
+              text2: `${file.name} attached. Tap Save & Update Profile.`,
+            });
+          };
+          reader.readAsDataURL(file);
+        };
+        input.click();
+        return;
+      } catch (err) {
+        console.log("Web file input error:", err);
+      }
+    }
 
-      if (typeof getDocumentAsync === "function") {
-        const result = await getDocumentAsync({
-          type: ["application/pdf", "*/*"],
+    // 2. Native ExpoDocumentPicker if native module exists
+    if (ExpoDocumentPickerModule && typeof ExpoDocumentPickerModule.getDocumentAsync === "function") {
+      try {
+        const result = await ExpoDocumentPickerModule.getDocumentAsync({
+          type: [
+            "application/pdf",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "image/*",
+            "*/*",
+          ],
           copyToCacheDirectory: true,
         });
 
         if (!result.canceled && result.assets && result.assets.length > 0) {
           const file = result.assets[0];
-
-          const isPdf =
-            file.mimeType === "application/pdf" ||
-            file.name?.toLowerCase().endsWith(".pdf");
-
-          if (!isPdf) {
-            Alert.alert("Invalid File", "Please select a valid PDF file (.pdf).");
-            return;
-          }
-
-          if (file.size && file.size > 5 * 1024 * 1024) {
-            Alert.alert("File Too Large", "Please select a PDF smaller than 5 MB.");
-            return;
-          }
-
-          let pdfData = "";
-          const fs = getFileSystem();
-          if (fs && typeof fs.readAsStringAsync === "function") {
+          let base64 = "";
+          if (FileSystemModule?.readAsStringAsync) {
             try {
-              const base64 = await fs.readAsStringAsync(file.uri, {
-                encoding: fs.EncodingType.Base64,
+              base64 = await FileSystemModule.readAsStringAsync(file.uri, {
+                encoding: FileSystemModule.EncodingType.Base64,
               });
-              pdfData = `data:application/pdf;base64,${base64}`;
             } catch (fsErr) {
-              console.log("FileSystem base64 conversion fallback:", fsErr?.message);
-              pdfData = file.uri;
-            }
-          } else {
-            try {
-              const response = await fetch(file.uri);
-              const blob = await response.blob();
-              pdfData = await new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result);
-                reader.onerror = reject;
-                reader.readAsDataURL(blob);
-              });
-            } catch (blobErr) {
-              pdfData = file.uri;
+              console.log("Error reading file base64:", fsErr);
             }
           }
 
-          const sizeFormatted = file.size
-            ? `${(file.size / 1024).toFixed(1)} KB`
-            : "PDF Document";
-
+          const mime =
+            file.mimeType ||
+            (file.name?.endsWith(".pdf") ? "application/pdf" : "application/octet-stream");
+          const fileUri = base64 ? `data:${mime};base64,${base64}` : file.uri;
+          handleChange("resume", fileUri);
           setResumeName(file.name || "Resume.pdf");
-          setResumeSize(sizeFormatted);
-          handleChange("resume", pdfData);
-
+          if (file.size) {
+            setResumeSize(`${(file.size / (1024 * 1024)).toFixed(2)} MB`);
+          }
+          if (userId && fileUri) {
+            try {
+              const res = await api.put(`/user/profile/${userId}`, { resume: fileUri });
+              const updated = res.data?.user || res.data;
+              if (updated) {
+                dispatch(setUser(updated));
+                await AsyncStorage.setItem("user", JSON.stringify(updated));
+              }
+            } catch (saveErr) {
+              console.log("Auto-save resume error:", saveErr?.message);
+            }
+          }
           Toast.show({
             type: "success",
-            text1: "PDF Resume Attached 📄",
-            text2: file.name || "Ready to save",
+            text1: "Resume File Attached",
+            text2: `${file.name || "Document"} attached and saved to profile.`,
           });
           return;
-        } else if (result.canceled) {
-          return;
         }
+      } catch (docErr) {
+        console.log("Native document picker error:", docErr);
       }
-    } catch (pickerErr) {
-      console.log("DocumentPicker threw, falling back to file browser:", pickerErr?.message);
     }
 
-    // 2. Seamless Fallback: Launch in-app file chooser that natively opens device files / file manager
+    // 3. Fallback: Launch in-app file chooser modal without needing ExpoDocumentPicker native module
     try {
-      const redirectUrl = Linking.createURL("resume-uploaded");
-      const baseURL = api?.defaults?.baseURL || "http://10.138.9.241:3000";
-      const uploadUrl = `${baseURL}/upload-resume?userId=${userId || ""}&redirect=${encodeURIComponent(
-        redirectUrl
-      )}`;
+      const rawBaseUrl = api.defaults?.baseURL || "http://10.138.9.241:3000";
+      const redirectUri = Linking.createURL("resume-uploaded");
+      const uploadUrl = `${rawBaseUrl}/upload-resume?userId=${userId || ""}&redirect=${encodeURIComponent(redirectUri)}`;
 
-      const browserResult = await WebBrowser.openAuthSessionAsync(
-        uploadUrl,
-        redirectUrl
-      );
-
-      if (browserResult.type === "success" && browserResult.url) {
-        const parsed = Linking.parse(browserResult.url);
+      const res = await WebBrowser.openAuthSessionAsync(uploadUrl, redirectUri);
+      if (res && res.type === "success" && res.url) {
+        const parsed = Linking.parse(res.url);
         const fileName = parsed.queryParams?.fileName || "Resume.pdf";
         const fileSize = parsed.queryParams?.fileSize;
-        const formattedSize = fileSize
-          ? `${(Number(fileSize) / 1024).toFixed(1)} KB`
-          : "PDF Document";
-
+        setResumeName(fileName);
+        if (fileSize) {
+          const mb = (Number(fileSize) / (1024 * 1024)).toFixed(2);
+          setResumeSize(`${mb} MB`);
+        }
+        // Sync updated profile with backend
         if (userId) {
-          try {
-            const userRes = await api.get(`/user/${userId}`);
-            if (userRes.data?.resume) {
-              handleChange("resume", userRes.data.resume);
-              dispatch(setUser(userRes.data));
-              await AsyncStorage.setItem("user", JSON.stringify(userRes.data));
-            }
-          } catch (refetchErr) {
-            console.log("Error refetching user data:", refetchErr);
+          const userRes = await api.get(`/user/${userId}`);
+          const userData = userRes.data?.user || userRes.data;
+          if (userData) {
+            dispatch(setUser(userData));
+            await AsyncStorage.setItem("user", JSON.stringify(userData));
+            handleChange("resume", userData.resume || "");
           }
         }
-
-        setResumeName(fileName);
-        setResumeSize(formattedSize);
-
         Toast.show({
           type: "success",
-          text1: "PDF Resume Attached 📄",
-          text2: fileName,
+          text1: "Resume Uploaded Successfully",
+          text2: `${fileName} attached to profile.`,
         });
       }
     } catch (browserErr) {
-      console.log("Error launching system file browser:", browserErr);
-      setShowUrlInput(true);
+      console.log("Error launching file chooser:", browserErr);
       Alert.alert(
-        "File Selection",
-        "Could not automatically open device file manager. You can enter your resume link below or choose from Gallery."
+        "File Upload",
+        "Could not launch file chooser. You can also paste a Google Drive link below."
       );
     }
   };
 
-  // Master Resume selection dialog giving the user complete flexibility
-  const handleResumePress = () => {
+  // Pick resume image/scan from photo gallery
+  const handlePickResumeFromGallery = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert(
+          "Permission Required",
+          "Please grant photo gallery access to select your resume document."
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        quality: 0.8,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        const mime = asset.mimeType || "image/jpeg";
+        const base64Data = asset.base64 ? `data:${mime};base64,${asset.base64}` : asset.uri;
+        handleChange("resume", base64Data);
+        setResumeName(asset.fileName || "Resume_Document.jpg");
+        if (asset.fileSize) {
+          setResumeSize(`${(asset.fileSize / (1024 * 1024)).toFixed(2)} MB`);
+        }
+        if (userId && base64Data) {
+          try {
+            const res = await api.put(`/user/profile/${userId}`, { resume: base64Data });
+            const updated = res.data?.user || res.data;
+            if (updated) {
+              dispatch(setUser(updated));
+              await AsyncStorage.setItem("user", JSON.stringify(updated));
+            }
+          } catch (saveErr) {
+            console.log("Auto-save resume image error:", saveErr?.message);
+          }
+        }
+        Toast.show({
+          type: "success",
+          text1: "Resume Document Attached",
+          text2: "Resume image attached and saved to profile.",
+        });
+      }
+    } catch (err) {
+      console.log("Error selecting resume image:", err);
+      Alert.alert("Error", "Could not select the document. Please try again.");
+    }
+  };
+
+  // Preview or open resume
+  const handlePreviewResume = async () => {
+    const rawResume = profile.resume?.trim();
+    if (!rawResume) {
+      Alert.alert("No Resume", "No resume has been uploaded yet.");
+      return;
+    }
+
+    // Direct Web / Google Drive URL
+    if (!rawResume.startsWith("data:")) {
+      let url = rawResume;
+      if (!url.startsWith("http://") && !url.startsWith("https://")) {
+        url = "https://" + url;
+      }
+      try {
+        const supported = await Linking.canOpenURL(url);
+        if (supported) {
+          await Linking.openURL(url);
+        } else {
+          Alert.alert("Cannot Open Link", `Unable to open this link in your browser:\n${url}`);
+        }
+      } catch (err) {
+        Alert.alert("Link Error", "Could not open resume link. Please check the URL.");
+      }
+      return;
+    }
+
+    // Base64 file format in web
+    if (Platform.OS === "web") {
+      try {
+        window.open(rawResume, "_blank");
+        return;
+      } catch (_) {}
+    }
+
+    // Direct browser preview via backend endpoint
+    if (userId) {
+      const rawBaseUrl = api.defaults?.baseURL || "http://10.138.9.241:3000";
+      const resumeUrl = `${rawBaseUrl}/user/${userId}/resume`;
+      try {
+        await WebBrowser.openBrowserAsync(resumeUrl);
+        return;
+      } catch (browserErr) {
+        console.log("WebBrowser failed, trying cached file:", browserErr);
+      }
+    }
+
+    // Base64 file in native mobile: write to cache and open
+    if (FileSystemModule?.cacheDirectory && FileSystemModule?.writeAsStringAsync) {
+      try {
+        const mimeMatch = rawResume.match(/^data:([^;]+);base64,/);
+        const mime = mimeMatch ? mimeMatch[1] : "application/pdf";
+        let ext = "pdf";
+        if (mime.includes("pdf")) ext = "pdf";
+        else if (mime.includes("png")) ext = "png";
+        else if (mime.includes("jpeg") || mime.includes("jpg")) ext = "jpg";
+        else if (mime.includes("word") || mime.includes("docx")) ext = "docx";
+        else if (mime.includes("msword")) ext = "doc";
+
+        const base64Content = rawResume.replace(/^data:[^;]+;base64,/, "");
+        const cacheUri = `${FileSystemModule.cacheDirectory}my_resume_${Date.now()}.${ext}`;
+        await FileSystemModule.writeAsStringAsync(cacheUri, base64Content, {
+          encoding: FileSystemModule.EncodingType.Base64,
+        });
+
+        const canOpen = await Linking.canOpenURL(cacheUri);
+        if (canOpen) {
+          await Linking.openURL(cacheUri);
+          return;
+        }
+      } catch (err) {
+        console.log("Error opening cached resume:", err);
+      }
+    }
+
     Alert.alert(
-      "Attach Resume",
-      "Choose how you want to attach your resume:",
-      [
-        {
-          text: "📄 Choose PDF File",
-          onPress: pickPdfResume,
-        },
-        {
-          text: "🖼️ Choose from Gallery / Photos",
-          onPress: pickResumeFromGallery,
-        },
-        {
-          text: "🔗 Enter Resume Web Link",
-          onPress: () => setShowUrlInput(true),
-        },
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
-      ]
+      "Resume File Attached",
+      `Your resume document (${resumeName || "Resume file"}) is securely stored with your profile.`
     );
   };
 
   const handleRemoveResume = () => {
-    handleChange("resume", "");
-    setResumeName("");
-    setResumeSize("");
-    Toast.show({
-      type: "info",
-      text1: "Resume Removed",
-      text2: "Tap 'Save & Update Profile' to apply.",
-    });
-  };
-
-  const handleOpenResume = async () => {
-    const rawResume = profile.resume?.trim();
-    if (!rawResume) {
-      Alert.alert("No Resume", "Please attach a PDF resume first.");
-      return;
-    }
-
-    // Base64 PDF data URI
-    if (rawResume.startsWith("data:application/pdf;base64,")) {
-      try {
-        const fs = getFileSystem();
-        if (fs && fs.cacheDirectory && typeof fs.writeAsStringAsync === "function") {
-          const base64Data = rawResume.replace("data:application/pdf;base64,", "");
-          const cacheUri = `${fs.cacheDirectory}preview_${Date.now()}.pdf`;
-          await fs.writeAsStringAsync(cacheUri, base64Data, {
-            encoding: fs.EncodingType.Base64,
-          });
-
-          const canOpen = await Linking.canOpenURL(cacheUri);
-          if (canOpen) {
-            await Linking.openURL(cacheUri);
-            return;
-          }
-        }
-      } catch (err) {
-        console.log("Error opening base64 PDF:", err);
-      }
-      Alert.alert("PDF Document", `PDF resume is attached (${resumeName || "Resume.pdf"}).`);
-      return;
-    }
-
-    // Base64 Image data URI (Gallery/photo resumes)
-    if (rawResume.startsWith("data:image/")) {
-      try {
-        const match = rawResume.match(/^data:image\/(\w+);base64,/);
-        const ext = match ? match[1] : "jpg";
-        const fs = getFileSystem();
-        if (fs && fs.cacheDirectory && typeof fs.writeAsStringAsync === "function") {
-          const base64Data = rawResume.replace(/^data:image\/\w+;base64,/, "");
-          const cacheUri = `${fs.cacheDirectory}preview_${Date.now()}.${ext}`;
-          await fs.writeAsStringAsync(cacheUri, base64Data, {
-            encoding: fs.EncodingType.Base64,
-          });
-
-          const canOpen = await Linking.canOpenURL(cacheUri);
-          if (canOpen) {
-            await Linking.openURL(cacheUri);
-            return;
-          }
-        }
-      } catch (err) {
-        console.log("Error opening resume image:", err);
-      }
-      Alert.alert("Resume Image", `Resume image is attached (${resumeName || "Resume_Image.jpg"}).`);
-      return;
-    }
-
-    // Web URL
-    let url = rawResume;
-    if (!url.startsWith("http://") && !url.startsWith("https://")) {
-      url = "https://" + url;
-    }
-
-    try {
-      const supported = await Linking.canOpenURL(url);
-      if (supported) {
-        await Linking.openURL(url);
-      } else {
-        Alert.alert("Cannot Open URL", `Unable to open this link in your browser:\n${url}`);
-      }
-    } catch (err) {
-      Alert.alert("Link Error", "Could not open resume link. Please check if the URL format is valid.");
-    }
+    Alert.alert(
+      "Remove Resume",
+      "Are you sure you want to remove your attached resume document?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            handleChange("resume", "");
+            setResumeName("");
+            setResumeSize("");
+            if (userId) {
+              try {
+                const res = await api.put(`/user/profile/${userId}`, { resume: "" });
+                const updated = res.data?.user || res.data;
+                if (updated) {
+                  dispatch(setUser(updated));
+                  await AsyncStorage.setItem("user", JSON.stringify(updated));
+                }
+              } catch (e) {
+                console.log("Error removing resume on server:", e);
+              }
+            }
+            Toast.show({
+              type: "info",
+              text1: "Resume Removed",
+              text2: "Your resume document was removed.",
+            });
+          },
+        },
+      ]
+    );
   };
 
   // Comprehensive Frontend Validations
@@ -592,14 +595,16 @@ const Profile = () => {
       }
     }
 
-    // 8. Resume validation (Optional, but if URL format given, must be valid)
-    if (profile.resume && profile.resume.trim().length > 0 && !profile.resume.startsWith("data:")) {
-      const resumeUrl = profile.resume.trim();
-      const urlPattern = /^(https?:\/\/)?(www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_+.~#?&//=]*)$/i;
-      if (!urlPattern.test(resumeUrl)) {
+    // 8. Resume validation (File format or valid link accepted)
+    if (profile.resume && profile.resume.trim().length > 0) {
+      const rawResume = profile.resume.trim();
+      const isFile = isBase64File(rawResume);
+      const isUrl = isUrlLink(rawResume) || isGoogleDriveUrl(rawResume);
+      if (!isFile && !isUrl) {
         errors.push({
-          field: "Resume / CV",
-          message: "Please upload a valid PDF file or enter a valid web URL.",
+          field: "Resume Document",
+          message:
+            "Please attach a valid resume file (PDF, DOC, Image) or provide a valid link.",
         });
       }
     }
@@ -796,9 +801,9 @@ const Profile = () => {
           <View style={styles.avatarCard}>
             <TouchableOpacity
               style={styles.avatarWrapper}
-              onPress={pickImage}
-              activeOpacity={0.8}
-              accessibilityLabel="Change profile photo"
+              onPress={handleAvatarPress}
+              activeOpacity={0.85}
+              accessibilityLabel={profile.profileImage ? "View profile photo" : "Upload profile photo"}
             >
               {profile.profileImage ? (
                 <Image
@@ -813,9 +818,15 @@ const Profile = () => {
                   </Text>
                 </View>
               )}
-              <View style={styles.cameraBadge}>
-                <Ionicons name="camera" size={16} color="#FFFFFF" />
-              </View>
+              <TouchableOpacity
+                style={styles.cameraBadge}
+                onPress={pickImage}
+                activeOpacity={0.8}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityLabel="Change profile photo"
+              >
+                <Ionicons name="camera" size={15} color="#FFFFFF" />
+              </TouchableOpacity>
             </TouchableOpacity>
 
             <View style={styles.avatarActions}>
@@ -841,7 +852,11 @@ const Profile = () => {
                 </TouchableOpacity>
               )}
             </View>
-            <Text style={styles.avatarHint}>JPG or PNG • Recommended under 2 MB</Text>
+            <Text style={styles.avatarHint}>
+              {profile.profileImage
+                ? "Tap photo to view full size • JPG or PNG"
+                : "JPG or PNG • Recommended under 2 MB"}
+            </Text>
           </View>
 
           {/* SECTION 1: Personal Information */}
@@ -1179,131 +1194,191 @@ const Profile = () => {
             </View>
           </View>
 
-          {/* SECTION 5: Resume (PDF Format) - Duplicate Profile Image URL is removed */}
+          {/* SECTION 5: Resume / CV Documents */}
           <View style={styles.sectionCard}>
             <View style={styles.sectionHeaderRow}>
-              <View style={[styles.sectionIconBadge, { backgroundColor: "#FEF2F2" }]}>
-                <Ionicons name="document-text" size={18} color="#DC2626" />
+              <View style={styles.sectionIconBadge}>
+                <Ionicons name="document-text-outline" size={18} color="#2563EB" />
               </View>
-              <Text style={styles.sectionTitle}>Resume (PDF Document)</Text>
+              <Text style={styles.sectionTitle}>Resume / CV Documents</Text>
             </View>
 
-            {profile.resume ? (
-              /* Attached PDF File Card */
-              <View style={styles.pdfAttachedCard}>
-                <View style={styles.pdfAttachedHeader}>
-                  <View style={styles.pdfIconCircle}>
-                    <Ionicons name="document-text" size={26} color="#DC2626" />
+            <Text style={styles.resumeSectionIntro}>
+              Upload your resume document so recruiters can evaluate your background when you apply for jobs.
+            </Text>
+
+            {Boolean(profile.resume) ? (
+              /* Attached Resume Card */
+              <View style={styles.attachedCard}>
+                <View style={styles.attachedHeader}>
+                  <View
+                    style={[
+                      styles.fileIconBadge,
+                      profile.resume.startsWith("data:image")
+                        ? styles.fileIconBadgeImage
+                        : profile.resume.startsWith("data:application/pdf") || resumeName?.toLowerCase().endsWith(".pdf")
+                        ? styles.fileIconBadgePdf
+                        : styles.fileIconBadgeGeneric,
+                    ]}
+                  >
+                    <Ionicons
+                      name={
+                        profile.resume.startsWith("data:image")
+                          ? "image"
+                          : profile.resume.startsWith("data:application/pdf") || resumeName?.toLowerCase().endsWith(".pdf")
+                          ? "document-text"
+                          : profile.resume.startsWith("data:")
+                          ? "document"
+                          : "link"
+                      }
+                      size={26}
+                      color={
+                        profile.resume.startsWith("data:image")
+                          ? "#7C3AED"
+                          : profile.resume.startsWith("data:application/pdf") || resumeName?.toLowerCase().endsWith(".pdf")
+                          ? "#DC2626"
+                          : "#2563EB"
+                      }
+                    />
                   </View>
-                  <View style={styles.pdfFileInfo}>
-                    <Text style={styles.pdfFileName} numberOfLines={1}>
-                      {resumeName || (profile.resume.startsWith("data:") ? "My_Resume.pdf" : profile.resume.split("/").pop() || "Resume.pdf")}
+
+                  <View style={styles.fileDetails}>
+                    <Text style={styles.fileTitle} numberOfLines={1}>
+                      {resumeName ||
+                        (profile.resume.startsWith("data:application/pdf")
+                          ? "Resume.pdf"
+                          : profile.resume.startsWith("data:image")
+                          ? "Resume_Scan.jpg"
+                          : profile.resume.startsWith("data:")
+                          ? "Resume_Document"
+                          : "Resume_Link")}
                     </Text>
-                    <View style={styles.pdfMetaRow}>
-                      <View style={styles.pdfReadyBadge}>
-                        <Ionicons name="checkmark-circle" size={12} color="#16A34A" style={{ marginRight: 3 }} />
-                        <Text style={styles.pdfReadyText}>PDF Attached</Text>
+                    <View style={styles.fileMetaRow}>
+                      <View style={styles.verifiedBadge}>
+                        <Ionicons name="checkmark-circle" size={13} color="#16A34A" style={{ marginRight: 3 }} />
+                        <Text style={styles.verifiedText}>File Attached</Text>
                       </View>
                       {Boolean(resumeSize) && (
-                        <Text style={styles.pdfFileSizeText}>{resumeSize}</Text>
+                        <Text style={styles.fileSizeText}>• {resumeSize}</Text>
                       )}
                     </View>
                   </View>
+
+                  <TouchableOpacity
+                    style={styles.iconRemoveBtn}
+                    onPress={handleRemoveResume}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    accessibilityLabel="Remove resume"
+                  >
+                    <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                  </TouchableOpacity>
                 </View>
 
-                {/* PDF Actions Row */}
-                <View style={styles.pdfActionRow}>
+                {/* Primary Action Buttons */}
+                <View style={styles.attachedActions}>
                   <TouchableOpacity
-                    style={styles.pdfPreviewBtn}
-                    onPress={handleOpenResume}
+                    style={styles.btnPreview}
+                    onPress={handlePreviewResume}
                     activeOpacity={0.7}
                   >
-                    <Ionicons name="eye-outline" size={15} color="#2563EB" style={{ marginRight: 5 }} />
-                    <Text style={styles.pdfPreviewBtnText}>Preview / Open PDF</Text>
+                    <Ionicons name="eye-outline" size={16} color="#2563EB" style={{ marginRight: 6 }} />
+                    <Text style={styles.btnPreviewText}>View / Preview</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={styles.pdfReplaceBtn}
-                    onPress={handleResumePress}
+                    style={styles.btnReplace}
+                    onPress={handlePickResumeFile}
                     activeOpacity={0.7}
                   >
-                    <Ionicons name="swap-horizontal-outline" size={15} color="#475569" style={{ marginRight: 4 }} />
-                    <Text style={styles.pdfReplaceBtnText}>Change</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.pdfRemoveBtn}
-                    onPress={handleRemoveResume}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                    <Ionicons name="repeat-outline" size={16} color="#475569" style={{ marginRight: 6 }} />
+                    <Text style={styles.btnReplaceText}>Replace File</Text>
                   </TouchableOpacity>
                 </View>
               </View>
             ) : (
-              /* PDF Upload Dropzone */
-              <TouchableOpacity
-                style={styles.pdfUploadZone}
-                onPress={handleResumePress}
-                activeOpacity={0.8}
-              >
-                <View style={styles.pdfUploadIconCircle}>
-                  <Ionicons name="cloud-upload-outline" size={32} color="#2563EB" />
-                </View>
-                <Text style={styles.pdfUploadTitle}>Upload Resume Document</Text>
-                <Text style={styles.pdfUploadSubtitle}>
-                  Tap here to select your resume (PDF or Image) from your device
-                </Text>
-                <View style={styles.pdfPillBadge}>
-                  <Ionicons name="document-attach-outline" size={13} color="#2563EB" style={{ marginRight: 4 }} />
-                  <Text style={styles.pdfPillText}>PDF or Image • Max 5 MB</Text>
-                </View>
-              </TouchableOpacity>
-            )}
+              /* Upload Options when no file is attached */
+              <View style={styles.uploadContainer}>
+                {/* 2 Clean Cards for Choosing Files */}
+                <View style={styles.uploadCardsRow}>
+                  {/* Option 1: Device File Chooser */}
+                  <TouchableOpacity
+                    style={styles.uploadActionCard}
+                    onPress={handlePickResumeFile}
+                    activeOpacity={0.8}
+                  >
+                    <View style={[styles.actionIconCircle, { backgroundColor: "#EFF6FF" }]}>
+                      <Ionicons name="document-text" size={26} color="#2563EB" />
+                    </View>
+                    <Text style={styles.actionCardTitle}>Choose Document</Text>
+                    <Text style={styles.actionCardSubtitle}>PDF, Word (.doc/.docx)</Text>
+                    <View style={styles.actionPill}>
+                      <Ionicons name="folder-open-outline" size={13} color="#2563EB" style={{ marginRight: 4 }} />
+                      <Text style={styles.actionPillText}>Browse Files</Text>
+                    </View>
+                  </TouchableOpacity>
 
-            {/* Optional URL Accordion */}
-            <TouchableOpacity
-              style={styles.linkToggleRow}
-              onPress={() => setShowUrlInput(!showUrlInput)}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name={showUrlInput ? "chevron-up" : "chevron-down"}
-                size={16}
-                color="#64748B"
-                style={{ marginRight: 6 }}
-              />
-              <Text style={styles.linkToggleText}>
-                {showUrlInput ? "Hide web link input" : "Or enter a public PDF web link (Google Drive / Dropbox)"}
-              </Text>
-            </TouchableOpacity>
+                  {/* Option 2: Photo / Gallery Chooser */}
+                  <TouchableOpacity
+                    style={styles.uploadActionCard}
+                    onPress={handlePickResumeFromGallery}
+                    activeOpacity={0.8}
+                  >
+                    <View style={[styles.actionIconCircle, { backgroundColor: "#F5F3FF" }]}>
+                      <Ionicons name="image" size={26} color="#7C3AED" />
+                    </View>
+                    <Text style={styles.actionCardTitle}>Photo / Scan</Text>
+                    <Text style={styles.actionCardSubtitle}>JPG, PNG image files</Text>
+                    <View style={[styles.actionPill, { backgroundColor: "#EDE9FE" }]}>
+                      <Ionicons name="images-outline" size={13} color="#7C3AED" style={{ marginRight: 4 }} />
+                      <Text style={[styles.actionPillText, { color: "#7C3AED" }]}>From Gallery</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
 
-            {showUrlInput && (
-              <View style={styles.urlInputBox}>
-                <View style={styles.inputWrap}>
-                  <Ionicons name="link-outline" size={18} color="#94A3B8" style={styles.inputIcon} />
-                  <TextInput
-                    placeholder="https://drive.google.com/file/... or PDF link"
-                    placeholderTextColor="#9CA3AF"
-                    keyboardType="url"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    value={profile.resume?.startsWith("data:") ? "" : profile.resume}
-                    onChangeText={(text) => {
-                      handleChange("resume", text);
-                      setResumeName(text ? text.split("/").pop() || "Resume.pdf" : "");
-                    }}
-                    style={styles.input}
-                  />
-                  {Boolean(profile.resume && !profile.resume.startsWith("data:")) && (
-                    <TouchableOpacity
-                      onPress={handleRemoveResume}
-                      style={styles.clearBtn}
-                      accessibilityLabel="Clear link"
-                    >
-                      <Ionicons name="close-circle" size={18} color="#94A3B8" />
-                    </TouchableOpacity>
-                  )}
+                {/* Subtle Divider */}
+                <View style={styles.orDividerRow}>
+                  <View style={styles.orLine} />
+                  <Text style={styles.orText}>OR PASTE LINK</Text>
+                  <View style={styles.orLine} />
+                </View>
+
+                {/* Link input */}
+                <View style={styles.linkFieldWrap}>
+                  <Text style={styles.fieldLabel}>Google Drive or Public Resume URL</Text>
+                  <View style={styles.inputWrap}>
+                    <Ionicons name="link-outline" size={18} color="#94A3B8" style={styles.inputIcon} />
+                    <TextInput
+                      placeholder="https://drive.google.com/file/d/... or website"
+                      placeholderTextColor="#9CA3AF"
+                      keyboardType="url"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      value={profile.resume}
+                      onChangeText={(text) => {
+                        handleChange("resume", text.trim());
+                        if (text.trim()) setResumeName("Resume_Link");
+                      }}
+                      style={styles.input}
+                    />
+                    {Boolean(profile.resume) && (
+                      <TouchableOpacity
+                        onPress={() => {
+                          handleChange("resume", "");
+                          setResumeName("");
+                        }}
+                        style={{ padding: 6 }}
+                      >
+                        <Ionicons name="close-circle" size={18} color="#94A3B8" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+
+                <View style={styles.formatNotes}>
+                  <Ionicons name="shield-checkmark-outline" size={14} color="#16A34A" style={{ marginRight: 5 }} />
+                  <Text style={styles.formatNotesText}>
+                    Supports PDF, DOC, DOCX, JPG, PNG • Max size 5 MB
+                  </Text>
                 </View>
               </View>
             )}
@@ -1403,6 +1478,70 @@ const Profile = () => {
               <Text style={styles.modalBtnText}>Choose Another Photo</Text>
             </TouchableOpacity>
           </View>
+        </View>
+      </Modal>
+
+      {/* Full-Screen Profile Image Viewer Modal */}
+      <Modal
+        visible={imageModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setImageModalVisible(false)}
+      >
+        <View style={styles.imageViewerOverlay}>
+          {/* Header Bar */}
+          <SafeAreaView style={styles.imageViewerHeader} edges={["top"]}>
+            <TouchableOpacity
+              style={styles.imageViewerCloseBtn}
+              onPress={() => setImageModalVisible(false)}
+              activeOpacity={0.7}
+              hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+              accessibilityLabel="Close photo view"
+            >
+              <Ionicons name="close" size={26} color="#FFFFFF" />
+            </TouchableOpacity>
+            <View style={styles.imageViewerTitleWrap}>
+              <Text style={styles.imageViewerTitle} numberOfLines={1}>
+                {profile.name || "Profile Photo"}
+              </Text>
+              <Text style={styles.imageViewerSubtitle}>Profile Picture</Text>
+            </View>
+            <View style={{ width: 44 }} />
+          </SafeAreaView>
+
+          {/* Centered Large Photo */}
+          <View style={styles.imageViewerBody}>
+            {profile.profileImage ? (
+              <Image
+                source={{ uri: profile.profileImage }}
+                style={styles.imageViewerFullImage}
+                resizeMode="contain"
+              />
+            ) : null}
+          </View>
+
+          {/* Bottom Actions */}
+          <SafeAreaView style={styles.imageViewerFooter} edges={["bottom"]}>
+            <TouchableOpacity
+              style={styles.imageViewerChangeBtn}
+              onPress={() => {
+                setImageModalVisible(false);
+                setTimeout(pickImage, 350);
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="camera-outline" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <Text style={styles.imageViewerChangeText}>Change Photo</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.imageViewerDismissBtn}
+              onPress={() => setImageModalVisible(false)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.imageViewerDismissText}>Close</Text>
+            </TouchableOpacity>
+          </SafeAreaView>
         </View>
       </Modal>
     </SafeAreaView>
@@ -1728,175 +1867,6 @@ const styles = StyleSheet.create({
     color: "#1D4ED8",
   },
 
-  // PDF Resume Section Styles
-  pdfAttachedCard: {
-    backgroundColor: "#F8FAFC",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    padding: 14,
-    marginBottom: 10,
-  },
-  pdfAttachedHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  pdfIconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 10,
-    backgroundColor: "#FEE2E2",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 12,
-  },
-  pdfFileInfo: {
-    flex: 1,
-  },
-  pdfFileName: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#0F172A",
-    marginBottom: 3,
-  },
-  pdfMetaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  pdfReadyBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#DCFCE7",
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-  },
-  pdfReadyText: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: "#16A34A",
-  },
-  pdfFileSizeText: {
-    fontSize: 12,
-    color: "#64748B",
-  },
-  pdfActionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    borderTopWidth: 1,
-    borderTopColor: "#E2E8F0",
-    paddingTop: 10,
-  },
-  pdfPreviewBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#EFF6FF",
-    borderWidth: 1,
-    borderColor: "#BFDBFE",
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  pdfPreviewBtnText: {
-    color: "#2563EB",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  pdfReplaceBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#F1F5F9",
-    borderWidth: 1,
-    borderColor: "#CBD5E1",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  pdfReplaceBtnText: {
-    color: "#475569",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  pdfRemoveBtn: {
-    backgroundColor: "#FEF2F2",
-    borderWidth: 1,
-    borderColor: "#FECACA",
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 8,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  // PDF Upload Dropzone
-  pdfUploadZone: {
-    backgroundColor: "#F8FAFC",
-    borderWidth: 2,
-    borderColor: "#CBD5E1",
-    borderStyle: "dashed",
-    borderRadius: 14,
-    paddingVertical: 24,
-    paddingHorizontal: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 10,
-  },
-  pdfUploadIconCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "#EFF6FF",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  pdfUploadTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#1E293B",
-    marginBottom: 4,
-  },
-  pdfUploadSubtitle: {
-    fontSize: 12,
-    color: "#64748B",
-    textAlign: "center",
-    marginBottom: 10,
-  },
-  pdfPillBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#EFF6FF",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  pdfPillText: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: "#2563EB",
-  },
-
-  // URL Accordion / Option
-  linkToggleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 6,
-    paddingVertical: 4,
-  },
-  linkToggleText: {
-    fontSize: 12,
-    color: "#64748B",
-    fontWeight: "500",
-  },
-  urlInputBox: {
-    marginTop: 8,
-  },
-
   // Submit Button
   submitButton: {
     backgroundColor: "#2563EB",
@@ -2021,5 +1991,310 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 15,
     fontWeight: "700",
+  },
+
+  // SECTION 5: Resume / CV Documents Styles
+  resumeSectionIntro: {
+    fontSize: 13,
+    color: "#64748B",
+    marginBottom: 14,
+    lineHeight: 18,
+  },
+
+  // Attached Document Card
+  attachedCard: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: "#E2E8F0",
+    padding: 14,
+  },
+  attachedHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  fileIconBadge: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  fileIconBadgePdf: {
+    backgroundColor: "#FEE2E2",
+  },
+  fileIconBadgeImage: {
+    backgroundColor: "#EDE9FE",
+  },
+  fileIconBadgeGeneric: {
+    backgroundColor: "#EFF6FF",
+  },
+  fileDetails: {
+    flex: 1,
+    marginHorizontal: 12,
+  },
+  fileTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#0F172A",
+    marginBottom: 3,
+  },
+  fileMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  verifiedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#DCFCE7",
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  verifiedText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#15803D",
+  },
+  fileSizeText: {
+    fontSize: 11,
+    color: "#64748B",
+    marginLeft: 6,
+  },
+  iconRemoveBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  attachedActions: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#E2E8F0",
+  },
+  btnPreview: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#EFF6FF",
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  btnPreviewText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#2563EB",
+  },
+  btnReplace: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F1F5F9",
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  btnReplaceText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#475569",
+  },
+
+  // Upload Container & Action Cards
+  uploadContainer: {
+    width: "100%",
+  },
+  uploadCardsRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 16,
+  },
+  uploadActionCard: {
+    flex: 1,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1.5,
+    borderColor: "#E2E8F0",
+    borderRadius: 14,
+    padding: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  actionIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  actionCardTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#0F172A",
+    marginBottom: 2,
+    textAlign: "center",
+  },
+  actionCardSubtitle: {
+    fontSize: 11,
+    color: "#64748B",
+    textAlign: "center",
+    marginBottom: 10,
+  },
+  actionPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#EFF6FF",
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  actionPillText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#2563EB",
+  },
+
+  // Divider
+  orDividerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 10,
+  },
+  orLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "#E2E8F0",
+  },
+  orText: {
+    marginHorizontal: 10,
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#94A3B8",
+    letterSpacing: 0.5,
+  },
+
+  // Link Field
+  linkFieldWrap: {
+    marginBottom: 10,
+  },
+  fieldLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#475569",
+    marginBottom: 6,
+  },
+
+  // Notes
+  formatNotes: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F0FDF4",
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
+    marginTop: 4,
+  },
+  formatNotesText: {
+    fontSize: 11,
+    color: "#166534",
+    fontWeight: "500",
+  },
+
+  // Full-Screen Image Viewer Modal
+  imageViewerOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.95)",
+    justifyContent: "space-between",
+  },
+  imageViewerHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  imageViewerCloseBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(255, 255, 255, 0.18)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  imageViewerTitleWrap: {
+    alignItems: "center",
+    flex: 1,
+    marginHorizontal: 12,
+  },
+  imageViewerTitle: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  imageViewerSubtitle: {
+    color: "#94A3B8",
+    fontSize: 12,
+    marginTop: 2,
+  },
+  imageViewerBody: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 16,
+  },
+  imageViewerFullImage: {
+    width: "100%",
+    height: "85%",
+    borderRadius: 16,
+  },
+  imageViewerFooter: {
+    flexDirection: "row",
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 24,
+    justifyContent: "center",
+  },
+  imageViewerChangeBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#2563EB",
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  imageViewerChangeText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  imageViewerDismissBtn: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.18)",
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  imageViewerDismissText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "600",
   },
 });

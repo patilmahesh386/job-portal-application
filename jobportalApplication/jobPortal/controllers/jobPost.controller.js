@@ -1,4 +1,5 @@
 const service = require("../service/jobPost.service");
+const notificationService = require("../service/notification.service");
 
 
 exports.getPost = async (req, res, next) => {
@@ -51,6 +52,17 @@ exports.createPost = async (req, res, next) => {
       createBy: user.id,
     };
     const response = await service.createPost(data);
+
+    // Broadcast notification to candidates about the newly posted job
+    notificationService
+      .notifyCandidatesOnNewJob(response, user)
+      .then((resInfo) => {
+        console.log("Candidate notification result:", resInfo);
+      })
+      .catch((err) => {
+        console.error("[Job Controller] Candidate notification broadcast error:", err.message);
+      });
+
     res.status(200).json(response);
     console.log(response);
   } catch (error) {

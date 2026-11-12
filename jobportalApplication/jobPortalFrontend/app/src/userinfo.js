@@ -8,12 +8,14 @@ import {
     ActivityIndicator,
     Alert,
     Image,
+    Modal,
     ScrollView,
     StyleSheet,
     Text,
     TouchableOpacity,
     View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
 import { useDispatch, useSelector } from "react-redux";
 import { logout, setUser, updateProfile } from "../redux/userRegisterSlice";
@@ -23,6 +25,15 @@ export default function UserInfo() {
     const router = useRouter();
     const dispatch = useDispatch();
     const [imageLoading, setImageLoading] = useState(false);
+    const [imageModalVisible, setImageModalVisible] = useState(false);
+
+    const handleAvatarPress = () => {
+        if (user?.profileImage) {
+            setImageModalVisible(true);
+        } else {
+            handlePickAndChangePhoto();
+        }
+    };
 
     useEffect(() => {
         const foregroundSubscription = Notifications.addNotificationReceivedListener(
@@ -128,10 +139,10 @@ export default function UserInfo() {
             <View style={styles.header}>
                 <TouchableOpacity
                     style={styles.avatarWrapper}
-                    onPress={handlePickAndChangePhoto}
-                    activeOpacity={0.8}
+                    onPress={handleAvatarPress}
+                    activeOpacity={0.85}
                     disabled={imageLoading}
-                    accessibilityLabel="Change profile photo"
+                    accessibilityLabel={user?.profileImage ? "View profile photo" : "Change profile photo"}
                 >
                     <View style={styles.avatarContainer}>
                         {imageLoading ? (
@@ -148,9 +159,16 @@ export default function UserInfo() {
                             </Text>
                         )}
                     </View>
-                    <View style={styles.cameraBadge}>
+                    <TouchableOpacity
+                        style={styles.cameraBadge}
+                        onPress={handlePickAndChangePhoto}
+                        activeOpacity={0.8}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        disabled={imageLoading}
+                        accessibilityLabel="Change photo"
+                    >
                         <Ionicons name="camera" size={14} color="#FFFFFF" />
-                    </View>
+                    </TouchableOpacity>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -220,6 +238,70 @@ export default function UserInfo() {
             >
                 <Text style={styles.logoutButtonText}>Log Out</Text>
             </TouchableOpacity>
+
+            {/* Full-Screen Profile Image Viewer Modal */}
+            <Modal
+                visible={imageModalVisible}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setImageModalVisible(false)}
+            >
+                <View style={styles.imageViewerOverlay}>
+                    {/* Header Bar */}
+                    <SafeAreaView style={styles.imageViewerHeader} edges={["top"]}>
+                        <TouchableOpacity
+                            style={styles.imageViewerCloseBtn}
+                            onPress={() => setImageModalVisible(false)}
+                            activeOpacity={0.7}
+                            hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                            accessibilityLabel="Close photo view"
+                        >
+                            <Ionicons name="close" size={26} color="#FFFFFF" />
+                        </TouchableOpacity>
+                        <View style={styles.imageViewerTitleWrap}>
+                            <Text style={styles.imageViewerTitle} numberOfLines={1}>
+                                {user?.name || "Profile Photo"}
+                            </Text>
+                            <Text style={styles.imageViewerSubtitle}>Profile Picture</Text>
+                        </View>
+                        <View style={{ width: 44 }} />
+                    </SafeAreaView>
+
+                    {/* Centered Large Photo */}
+                    <View style={styles.imageViewerBody}>
+                        {user?.profileImage ? (
+                            <Image
+                                source={{ uri: user.profileImage }}
+                                style={styles.imageViewerFullImage}
+                                resizeMode="contain"
+                            />
+                        ) : null}
+                    </View>
+
+                    {/* Bottom Actions */}
+                    <SafeAreaView style={styles.imageViewerFooter} edges={["bottom"]}>
+                        <TouchableOpacity
+                            style={styles.imageViewerChangeBtn}
+                            onPress={() => {
+                                setImageModalVisible(false);
+                                setTimeout(handlePickAndChangePhoto, 350);
+                            }}
+                            activeOpacity={0.8}
+                        >
+                            <Ionicons name="camera-outline" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+                            <Text style={styles.imageViewerChangeText}>Change Photo</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={styles.imageViewerDismissBtn}
+                            onPress={() => setImageModalVisible(false)}
+                            activeOpacity={0.8}
+                        >
+                            <Text style={styles.imageViewerDismissText}>Close</Text>
+                        </TouchableOpacity>
+                    </SafeAreaView>
+                </View>
+            </Modal>
         </ScrollView>
     );
 }
@@ -367,5 +449,88 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: "600",
         color: "#EF4444",
+    },
+
+    // Full-Screen Image Viewer Modal
+    imageViewerOverlay: {
+        flex: 1,
+        backgroundColor: "rgba(0, 0, 0, 0.95)",
+        justifyContent: "space-between",
+    },
+    imageViewerHeader: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+    },
+    imageViewerCloseBtn: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: "rgba(255, 255, 255, 0.18)",
+        justifyContent: "center",
+        alignItems: "center",
+    },
+    imageViewerTitleWrap: {
+        alignItems: "center",
+        flex: 1,
+        marginHorizontal: 12,
+    },
+    imageViewerTitle: {
+        color: "#FFFFFF",
+        fontSize: 16,
+        fontWeight: "700",
+    },
+    imageViewerSubtitle: {
+        color: "#94A3B8",
+        fontSize: 12,
+        marginTop: 2,
+    },
+    imageViewerBody: {
+        flex: 1,
+        justifyContent: "center",
+        alignItems: "center",
+        paddingHorizontal: 16,
+    },
+    imageViewerFullImage: {
+        width: "100%",
+        height: "85%",
+        borderRadius: 16,
+    },
+    imageViewerFooter: {
+        flexDirection: "row",
+        gap: 12,
+        paddingHorizontal: 20,
+        paddingTop: 12,
+        paddingBottom: 24,
+        justifyContent: "center",
+    },
+    imageViewerChangeBtn: {
+        flex: 1,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "#6366F1",
+        paddingVertical: 14,
+        borderRadius: 12,
+    },
+    imageViewerChangeText: {
+        color: "#FFFFFF",
+        fontSize: 14,
+        fontWeight: "700",
+    },
+    imageViewerDismissBtn: {
+        flex: 1,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "rgba(255, 255, 255, 0.18)",
+        paddingVertical: 14,
+        borderRadius: 12,
+    },
+    imageViewerDismissText: {
+        color: "#FFFFFF",
+        fontSize: 14,
+        fontWeight: "600",
     },
 });

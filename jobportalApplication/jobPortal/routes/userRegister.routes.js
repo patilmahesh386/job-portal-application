@@ -18,6 +18,7 @@ router.post("/user/reset-password", controller.resetPassword)
 router.put("/user/profile/:id", controller.updateUser)
 
 router.get("/user/:id", controller.getUserById )
+router.get("/user/:id/resume", controller.getUserResume)
 
 router.post('/saved-jobs/toggle',jsonAuthentication,  controller.toggleSaveJob);
 router.get('/saved-jobs',jsonAuthentication,controller.getSavedJobs);
@@ -52,17 +53,17 @@ router.get("/upload-resume", (req, res) => {
 <body>
   <div class="card">
     <div class="icon-wrapper">📄</div>
-    <h1>Select PDF Resume</h1>
-    <p>Choose your resume (.pdf) directly from your device files, Downloads, or Drive.</p>
+    <h1>Select Resume File</h1>
+    <p>Choose your resume document (.pdf, .doc, image) directly from your device storage, Downloads, or Drive.</p>
 
     <label for="filePicker" class="upload-btn">
       <span>📁</span>
-      <span>Open My Files / Choose PDF</span>
+      <span>Browse Files / Choose Resume</span>
     </label>
-    <input type="file" id="filePicker" accept="application/pdf,.pdf" onchange="processFile(event)" />
+    <input type="file" id="filePicker" accept=".pdf,.doc,.docx,application/pdf,image/*" onchange="processFile(event)" />
 
     <div id="statusBox" class="status-box"></div>
-    <div class="note">PDF documents only &bull; Max 5 MB</div>
+    <div class="note">PDF documents, Word docs, or images &bull; Max 5 MB</div>
   </div>
 
   <script>
@@ -73,9 +74,17 @@ router.get("/upload-resume", (req, res) => {
       const statusBox = document.getElementById('statusBox');
       statusBox.style.display = 'block';
 
-      if (!file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf') {
+      const fileName = file.name.toLowerCase();
+      const isAllowed = 
+        fileName.endsWith('.pdf') || 
+        fileName.endsWith('.doc') || 
+        fileName.endsWith('.docx') ||
+        file.type === 'application/pdf' ||
+        file.type.startsWith('image/');
+
+      if (!isAllowed) {
         statusBox.className = 'status-box status-error';
-        statusBox.innerHTML = '&#10060; Please select a PDF file (.pdf)';
+        statusBox.innerHTML = '&#10060; Please select a PDF, DOC, or image file';
         return;
       }
 

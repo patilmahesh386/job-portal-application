@@ -4,7 +4,7 @@ import axios from "axios";
 const api = axios.create({
   // Use 10.0.2.2 for Android Emulator. 
   // If using a physical device, replace with your computer's local IPv4 address (e.g., 192.168.1.5)
-  baseURL: "http://10.138.9.241:3000",
+  baseURL: "http://10.217.156.241:3000",
 });
 
 api.interceptors.request.use(

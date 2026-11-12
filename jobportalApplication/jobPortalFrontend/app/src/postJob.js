@@ -21,7 +21,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
 import { useDispatch, useSelector } from "react-redux";
 import { postJob } from "../redux/jobPostSlice";
-import { sendNotification } from "../redux/notificationSlice";
+import { notifyCandidatesNewJob, sendNotification } from "../redux/notificationSlice";
 
 const PostJob = () => {
     const router = useRouter();
@@ -176,18 +176,32 @@ const PostJob = () => {
 
             Toast.show({
                 type: "success",
-                text1: "Job Posted Successfully 🎉",
-                text2: `"${jobData.title}" is now live!`,
+                text1: "Job Live & Candidates Notified! 📢",
+                text2: `"${jobData.title}" is live! Notifications sent to candidates.`,
             });
+
+            // Send notification to candidates and recruiter
+            const createdJobId = response?._id || response?.id || "";
+            dispatch(
+                notifyCandidatesNewJob({
+                    _id: createdJobId,
+                    title: jobData.title,
+                    companyName: companyNameTrimmed,
+                    jobLocation: jobData.jobLocation,
+                    salary: salaryTrimmed,
+                    createBy: userId,
+                })
+            );
 
             if (userId) {
                 dispatch(
                     sendNotification({
                         userId: userId,
-                        title: "Job Posted Successfully",
-                        body: jobData.title,
+                        title: "Job Posted Successfully 🎉",
+                        body: `Your job listing "${jobData.title}" is live and candidates have been notified!`,
                         data: {
                             type: "JOBPOSTED",
+                            jobId: createdJobId,
                         },
                     })
                 );

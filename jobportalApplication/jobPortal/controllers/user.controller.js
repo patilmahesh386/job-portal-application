@@ -184,3 +184,76 @@ exports.resetPassword = async (req, res, next) => {
   }
 };
 
+// GET /user/:id/resume - Direct download or in-browser view of candidate resume
+exports.getUserResume = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const user = await service.getUserById(id);
+
+    if (!user || !user.resume || !user.resume.trim()) {
+      res.setHeader("Content-Type", "text/html");
+      return res.status(404).send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>No Resume Found</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background-color: #F8FAFC; color: #1E293B; text-align: center; padding: 20px; box-sizing: border-box; }
+            .card { background: #FFFFFF; border-radius: 16px; padding: 32px 24px; box-shadow: 0 4px 20px rgba(0,0,0,0.06); max-width: 400px; width: 100%; border: 1px solid #E2E8F0; }
+            .icon { font-size: 48px; margin-bottom: 12px; }
+            h2 { font-size: 20px; font-weight: 700; color: #0F172A; margin-bottom: 8px; }
+            p { font-size: 14px; color: #64748B; line-height: 1.5; }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <div class="icon">📄</div>
+            <h2>No Resume Attached</h2>
+            <p>This candidate has not uploaded a CV or resume document yet.</p>
+          </div>
+        </body>
+        </html>
+      `);
+    }
+
+    const resume = user.resume.trim();
+
+    // 1. Direct Web or Google Drive link
+    if (!resume.startsWith("data:")) {
+      let targetUrl = resume;
+      if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
+        targetUrl = "https://" + targetUrl;
+      }
+      return res.redirect(targetUrl);
+    }
+
+    // 2. Base64 file format (PDF, Word DOC, Images, etc.)
+    const match = resume.match(/^data:([^;]+);base64,(.+)$/s);
+    if (!match) {
+      return res.status(400).send("Invalid base64 resume format");
+    }
+
+    const mime = match[1] || "application/pdf";
+    const base64Data = match[2];
+    const buffer = Buffer.from(base64Data, "base64");
+
+    let ext = "pdf";
+    if (mime.includes("pdf")) ext = "pdf";
+    else if (mime.includes("jpeg") || mime.includes("jpg")) ext = "jpg";
+    else if (mime.includes("png")) ext = "png";
+    else if (mime.includes("word") || mime.includes("docx")) ext = "docx";
+    else if (mime.includes("msword")) ext = "doc";
+
+    const candidateName = (user.name || "Candidate").replace(/[^a-zA-Z0-9]/g, "_");
+    res.setHeader("Content-Type", mime);
+    res.setHeader("Content-Disposition", `inline; filename="${candidateName}_Resume.${ext}"`);
+    res.setHeader("Content-Length", buffer.length);
+    return res.send(buffer);
+  } catch (err) {
+    console.error("Error serving resume:", err);
+    return res.status(500).send("Error loading resume");
+  }
+};
+
+

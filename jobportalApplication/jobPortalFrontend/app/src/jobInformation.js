@@ -43,15 +43,26 @@ const JobInformation = () => {
         }
     }, [dispatch, jobId]);
 
+    const isGoogleDriveUrl = (url) => {
+        if (!url || typeof url !== "string") return false;
+        const trimmed = url.trim();
+        return /^(https?:\/\/)?(drive\.google\.com|docs\.google\.com)\/.+$/i.test(trimmed);
+    };
+
     const getCandidateMissingFields = (currentUser) => {
         const missing = [];
         if (!currentUser) return missing;
 
-        // 1. Resume (PDF or link)
-        if (!currentUser.resume || (typeof currentUser.resume === "string" && !currentUser.resume.trim())) {
+        // 1. Resume Document / File
+        const hasResume = Boolean(
+            currentUser.resume &&
+            typeof currentUser.resume === "string" &&
+            currentUser.resume.trim().length > 0
+        );
+        if (!hasResume) {
             missing.push({
-                field: "Resume / CV",
-                description: "Attach your PDF resume or link so recruiters can evaluate your background.",
+                field: "Resume Document",
+                description: "Upload your resume (PDF/DOC) or attach a link so recruiters can evaluate your background.",
                 icon: "document-text-outline",
             });
         }
